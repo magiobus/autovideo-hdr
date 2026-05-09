@@ -81,9 +81,7 @@ const StepUpload = ({ formData, setFormData }) => {
           />
         </svg>
         <p className="text-lg font-medium">Drop images here</p>
-        <p className="text-sm text-base-content/50 mt-1">
-          or click to browse
-        </p>
+        <p className="text-sm text-base-content/50 mt-1">or click to browse</p>
         <input
           ref={fileInputRef}
           type="file"

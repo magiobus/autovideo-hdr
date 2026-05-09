@@ -1,10 +1,31 @@
 "use client";
 
-import { toast } from "react-hot-toast";
+import { useState } from "react";
+import toast from "react-hot-toast";
+import { uploadFilesToR2 } from "@/helpers/uploadToR2";
 
 const StepGenerate = ({ formData }) => {
-  const handleGenerate = () => {
-    toast.success("Video generation started!");
+  const [uploading, setUploading] = useState(false);
+  const [uploadedUrls, setUploadedUrls] = useState(null);
+
+  const handleGenerate = async () => {
+    setUploading(true);
+
+    try {
+      const files = formData.photos.map((p) => p.file);
+      const results = await uploadFilesToR2(files);
+      setUploadedUrls(results);
+
+      toast.success(
+        `${results.length} image${results.length !== 1 ? "s" : ""} uploaded!`
+      );
+
+      // TODO: call video generation API with results (publicUrls) + formData
+    } catch (err) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -38,12 +59,34 @@ const StepGenerate = ({ formData }) => {
         </div>
       </div>
 
+      {/* Uploaded URLs feedback */}
+      {uploadedUrls && (
+        <div className="card bg-success/10 border border-success/30">
+          <div className="card-body py-3">
+            <p className="text-sm text-success">
+              {uploadedUrls.length} image{uploadedUrls.length !== 1 ? "s" : ""}{" "}
+              uploaded to R2
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Generate button */}
       <button
         className="btn btn-primary btn-lg w-full"
         onClick={handleGenerate}
+        disabled={uploading || uploadedUrls}
       >
-        Generate Video
+        {uploading ? (
+          <>
+            <span className="loading loading-spinner loading-sm" />
+            Uploading images...
+          </>
+        ) : uploadedUrls ? (
+          "Uploaded"
+        ) : (
+          "Generate Video"
+        )}
       </button>
     </div>
   );
