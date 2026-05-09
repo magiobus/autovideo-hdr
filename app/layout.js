@@ -1,5 +1,5 @@
 import { Inter } from "next/font/google";
-import { Toaster } from "react-hot-toast";
+import ClientLayout from "@/components/LayoutClient";
 import "./globals.css";
 
 const font = Inter({ subsets: ["latin"] });
@@ -13,8 +13,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" data-theme="dark" className={font.className}>
       <body className="min-h-screen">
-        <Toaster position="bottom-right" />
-        {children}
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   );

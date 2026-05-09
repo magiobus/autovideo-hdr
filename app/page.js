@@ -1,4 +1,5 @@
 import DbStatus from "@/components/DbStatus";
+import ButtonSignin from "@/components/ButtonSignin";
 
 export default function Home() {
   return (
@@ -7,7 +8,10 @@ export default function Home() {
       <p className="text-xl text-base-content/70 max-w-lg text-center mb-6">
         AI-powered real estate photo to cinematic video generation
       </p>
-      <DbStatus />
+      <div className="flex flex-col items-center gap-4">
+        <ButtonSignin />
+        <DbStatus />
+      </div>
     </main>
   );
 }
