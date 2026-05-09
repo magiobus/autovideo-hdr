@@ -185,11 +185,10 @@ export async function POST(request) {
       project.status = "assembling";
       console.log(`[webhook] all clips done, triggering assembly`);
 
-      // Fire and forget assembly
-      const baseUrl = getWebhookUrl().replace("/api/webhooks/fal", "");
-      fetch(`${baseUrl}/api/projects/${project._id}/assemble`, {
+      // Fire and forget assembly (use localhost, same server)
+      const selfUrl = `http://localhost:${process.env.PORT || 3000}`;
+      fetch(`${selfUrl}/api/projects/${project._id}/assemble`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
       }).catch((err) =>
         console.error("[webhook] assembly trigger failed:", err.message)
       );

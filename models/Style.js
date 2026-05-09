@@ -70,6 +70,11 @@ const styleSchema = mongoose.Schema(
       default: "16:9",
     },
     musicUrl: String,
+    voiceover: {
+      enabled: { type: Boolean, default: true },
+      voice: { type: String, default: "shimmer" },
+      speed: { type: Number, default: 0.95 },
+    },
     shots: [shotSchema],
   },
   {

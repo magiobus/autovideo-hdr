@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from "@/libs/mongoose";
 import Project from "@/models/Project";
 import Style from "@/models/Style";
-import { downloadAndStoreToR2 } from "@/helpers/downloadAndStoreToR2";
+import openai from "@/libs/openai";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -26,39 +26,38 @@ export async function POST(request, { params }) {
   }
 
   const style = await Style.findById(project.style).lean();
-  const completedClips = project.clips.filter(
-    (c) => c.videoJob?.status === "completed" && c.videoUrl
-  );
+  const completedClips = project.clips
+    .filter((c) => c.videoJob?.status === "completed" && c.videoUrl)
+    .sort((a, b) => a.order - b.order);
 
   if (completedClips.length === 0) {
     return NextResponse.json({ error: "No completed clips" }, { status: 400 });
   }
 
-  // Sort by order
-  completedClips.sort((a, b) => a.order - b.order);
+  project.status = "assembling";
+  await project.save();
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "autovideo-"));
   console.log(`[assembly] working dir: ${tmpDir}`);
 
   try {
+    // ============================================
     // Step 1: Download all clip videos
+    // ============================================
     console.log(`[assembly] downloading ${completedClips.length} clips...`);
     const clipPaths = [];
 
     for (let i = 0; i < completedClips.length; i++) {
-      const clip = completedClips[i];
       const clipPath = path.join(tmpDir, `clip-${i}.mp4`);
-
-      const res = await fetch(clip.videoUrl);
-      const buffer = Buffer.from(await res.arrayBuffer());
-      await fs.writeFile(clipPath, buffer);
-
+      const res = await fetch(completedClips[i].videoUrl);
+      await fs.writeFile(clipPath, Buffer.from(await res.arrayBuffer()));
       clipPaths.push(clipPath);
-      console.log(`[assembly] downloaded clip ${i}: ${clipPath}`);
     }
 
-    // Step 2: Re-encode clips to ensure consistent format
-    console.log(`[assembly] re-encoding clips for concat compatibility...`);
+    // ============================================
+    // Step 2: Normalize clips (consistent format, no audio)
+    // ============================================
+    console.log(`[assembly] normalizing clips...`);
     const normalizedPaths = [];
 
     for (let i = 0; i < clipPaths.length; i++) {
@@ -69,40 +68,31 @@ export async function POST(request, { params }) {
       normalizedPaths.push(normalized);
     }
 
-    // Step 3: Create concat list
+    // ============================================
+    // Step 3: Concatenate clips (video only, no audio)
+    // ============================================
     const concatList = path.join(tmpDir, "concat.txt");
-    const concatContent = normalizedPaths
-      .map((p) => `file '${p}'`)
-      .join("\n");
-    await fs.writeFile(concatList, concatContent);
+    await fs.writeFile(
+      concatList,
+      normalizedPaths.map((p) => `file '${p}'`).join("\n")
+    );
 
-    // Step 4: Concatenate
     const concatOutput = path.join(tmpDir, "concat.mp4");
     await execAsync(
       `ffmpeg -y -f concat -safe 0 -i "${concatList}" -c copy "${concatOutput}"`
     );
-    console.log(`[assembly] concatenated → ${concatOutput}`);
+    console.log(`[assembly] concatenated ${completedClips.length} clips`);
 
-    // Step 5: Add music if style has one
-    let finalPath = concatOutput;
+    const totalDuration = completedClips.reduce((sum, clip) => {
+      const shot = style?.shots?.[clip.shotIndex];
+      return sum + (shot?.duration || 5);
+    }, 0);
 
-    if (style?.musicUrl) {
-      console.log(`[assembly] adding music...`);
-      const musicPath = path.join(tmpDir, "music.mp3");
-      const musicRes = await fetch(style.musicUrl);
-      const musicBuffer = Buffer.from(await musicRes.arrayBuffer());
-      await fs.writeFile(musicPath, musicBuffer);
+    // ============================================
+    // Step 4: Text overlays (on mute video — before audio)
+    // ============================================
+    let videoPath = concatOutput;
 
-      const withMusic = path.join(tmpDir, "with-music.mp4");
-      await execAsync(
-        `ffmpeg -y -i "${concatOutput}" -i "${musicPath}" -map 0:v -map 1:a -c:v copy -c:a aac -shortest "${withMusic}"`
-      );
-      finalPath = withMusic;
-      console.log(`[assembly] music added → ${finalPath}`);
-    }
-
-    // Step 6: Add text overlays with FFmpeg drawtext
-    // (Hyperframes can be added later for fancier text; FFmpeg drawtext works for MVP)
     const textClips = completedClips.filter((clip) => {
       const shot = style?.shots?.[clip.shotIndex];
       return shot?.textOverlay?.text;
@@ -116,7 +106,6 @@ export async function POST(request, { params }) {
       for (const clip of completedClips) {
         const shot = style?.shots?.[clip.shotIndex];
         if (shot?.textOverlay?.text) {
-          // Replace template variables
           let text = shot.textOverlay.text
             .replace("{{address}}", project.propertyInfo.address || "")
             .replace("{{price}}", project.propertyInfo.price || "")
@@ -124,34 +113,158 @@ export async function POST(request, { params }) {
             .replace(/'/g, "'\\''")
             .replace(/:/g, "\\:");
 
-          const startAt = timeOffset + (shot.textOverlay.startAt || 0);
-          const endAt = startAt + (shot.textOverlay.duration || 3);
+          const overlayStart = timeOffset + (shot.textOverlay.startAt || 0);
+          const overlayEnd = overlayStart + (shot.textOverlay.duration || 3);
+          const fadeIn = overlayStart + 0.3;
+          const fadeOut = overlayEnd - 0.3;
+
+          const pos = shot.textOverlay.position || "bottom-center";
+          let x = "(w-tw)/2";
+          let y = "h-100";
+          if (pos === "center") {
+            y = "(h-th)/2";
+          } else if (pos === "top-left") {
+            x = "60";
+            y = "60";
+          } else if (pos === "top-center") {
+            y = "60";
+          }
 
           drawFilters.push(
-            `drawtext=text='${text}':fontsize=42:fontcolor=white:borderw=2:bordercolor=black:x=(w-tw)/2:y=h-80:enable='between(t,${startAt},${endAt})'`
+            `drawtext=text='${text}':fontsize=52:fontcolor=white:` +
+              `box=1:boxcolor=black@0.4:boxborderw=20:` +
+              `x=${x}:y=${y}:` +
+              `enable='between(t,${overlayStart},${overlayEnd})':` +
+              `alpha='if(lt(t,${fadeIn}),(t-${overlayStart})/0.3,if(gt(t,${fadeOut}),(${overlayEnd}-t)/0.3,1))'`
           );
         }
-        // Accumulate time offset (each clip's duration)
         timeOffset += shot?.duration || 5;
       }
 
       if (drawFilters.length > 0) {
-        const withText = path.join(tmpDir, "final.mp4");
-        const filterStr = drawFilters.join(",");
+        const withText = path.join(tmpDir, "with-text.mp4");
         await execAsync(
-          `ffmpeg -y -i "${finalPath}" -vf "${filterStr}" -c:a copy "${withText}"`
+          `ffmpeg -y -i "${videoPath}" -vf "${drawFilters.join(",")}" -c:v libx264 -preset fast -crf 23 "${withText}"`
         );
-        finalPath = withText;
-        console.log(`[assembly] text overlays added → ${finalPath}`);
+        videoPath = withText;
+        console.log(`[assembly] text overlays added`);
       }
     }
 
-    // Step 7: Upload to R2
+    // ============================================
+    // Step 5: Generate voiceover script (GPT-4o)
+    // ============================================
+    let voiceoverPath = null;
+    const voiceoverEnabled = style?.voiceover?.enabled !== false;
+
+    if (voiceoverEnabled) {
+      console.log(`[assembly] generating voiceover script...`);
+      const maxWords = Math.floor(totalDuration * 2.2);
+
+      const scriptResponse = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: `Write a short, professional real estate video narration script.
+
+Property: ${project.propertyInfo?.address || "Luxury Property"}
+Price: ${project.propertyInfo?.price || "Contact for pricing"}
+Description: ${project.propertyInfo?.description || "A beautiful, well-appointed home with stunning features throughout"}
+Video duration: ${totalDuration} seconds, ${completedClips.length} scenes.
+
+Rules:
+- Maximum ${maxWords} words (about 2.2 words per second pace)
+- Professional, warm, inviting tone — like a luxury real estate video tour
+- Mention the address naturally at the start
+- Mention the price at the end if provided
+- Flowing narration, NO bullet points or lists
+- Return ONLY the script text, nothing else`,
+          },
+        ],
+      });
+
+      const script = scriptResponse.choices[0].message.content;
+      console.log(`[assembly] voiceover script: "${script.substring(0, 100)}..."`);
+
+      // ============================================
+      // Step 6: Generate TTS audio (OpenAI)
+      // ============================================
+      console.log(`[assembly] generating TTS audio...`);
+      const voiceSettings = style?.voiceover || {};
+      const voice = voiceSettings.voice || "shimmer";
+      const speed = voiceSettings.speed || 0.95;
+
+      const speechResponse = await openai.audio.speech.create({
+        input: script,
+        model: "tts-1",
+        voice,
+        response_format: "mp3",
+        speed,
+      });
+
+      voiceoverPath = path.join(tmpDir, "voiceover.mp3");
+      await fs.writeFile(
+        voiceoverPath,
+        Buffer.from(await speechResponse.arrayBuffer())
+      );
+      console.log(`[assembly] voiceover generated (${voice}, ${speed}x speed)`);
+    }
+
+    // ============================================
+    // Step 7: Add audio (voiceover + music) — LAST STEP before upload
+    // ============================================
+    let finalPath = videoPath;
+    let musicPath = null;
+
+    if (style?.musicUrl) {
+      try {
+        const musicRes = await fetch(style.musicUrl);
+        if (musicRes.ok) {
+          musicPath = path.join(tmpDir, "music.mp3");
+          await fs.writeFile(
+            musicPath,
+            Buffer.from(await musicRes.arrayBuffer())
+          );
+        }
+      } catch {
+        console.log(`[assembly] music download failed, skipping`);
+      }
+    }
+
+    if (voiceoverPath && musicPath) {
+      console.log(`[assembly] mixing voiceover + music...`);
+      finalPath = path.join(tmpDir, "final.mp4");
+      await execAsync(
+        `ffmpeg -y -i "${videoPath}" -i "${voiceoverPath}" -i "${musicPath}" ` +
+          `-filter_complex "[2:a]volume=0.15[bg];[1:a][bg]amix=inputs=2:duration=first[a]" ` +
+          `-map 0:v -map "[a]" -c:v copy -c:a aac -shortest "${finalPath}"`
+      );
+    } else if (voiceoverPath) {
+      console.log(`[assembly] adding voiceover...`);
+      finalPath = path.join(tmpDir, "final.mp4");
+      await execAsync(
+        `ffmpeg -y -i "${videoPath}" -i "${voiceoverPath}" ` +
+          `-map 0:v -map 1:a -c:v copy -c:a aac -shortest "${finalPath}"`
+      );
+    } else if (musicPath) {
+      console.log(`[assembly] adding music...`);
+      finalPath = path.join(tmpDir, "final.mp4");
+      await execAsync(
+        `ffmpeg -y -i "${videoPath}" -i "${musicPath}" ` +
+          `-map 0:v -map 1:a -c:v copy -c:a aac -shortest "${finalPath}"`
+      );
+    }
+
+    console.log(`[assembly] audio done → ${finalPath}`);
+
+    // ============================================
+    // Step 8: Upload to R2
+    // ============================================
     console.log(`[assembly] uploading final video to R2...`);
     const finalBuffer = await fs.readFile(finalPath);
     const r2Key = `projects/${project._id}/final.mp4`;
 
-    // Upload directly using S3 SDK
     const { S3Client, PutObjectCommand } = await import("@aws-sdk/client-s3");
     const r2Client = new S3Client({
       region: "auto",
@@ -173,7 +286,6 @@ export async function POST(request, { params }) {
 
     const finalVideoUrl = `${process.env.R2_PUBLIC_URL.replace(/\/$/, "")}/${r2Key}`;
 
-    // Step 8: Update project
     project.finalVideoUrl = finalVideoUrl;
     project.finalVideoKey = r2Key;
     project.status = "completed";
@@ -181,8 +293,6 @@ export async function POST(request, { params }) {
     await project.save();
 
     console.log(`[assembly] DONE! ${finalVideoUrl}`);
-
-    // Cleanup temp dir
     await fs.rm(tmpDir, { recursive: true, force: true });
 
     return NextResponse.json({
@@ -191,13 +301,9 @@ export async function POST(request, { params }) {
     });
   } catch (err) {
     console.error(`[assembly] failed:`, err.message);
-
-    // Cleanup
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-
     project.status = "failed";
     await project.save();
-
     return NextResponse.json(
       { error: "Assembly failed: " + err.message },
       { status: 500 }

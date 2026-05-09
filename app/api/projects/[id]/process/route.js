@@ -241,11 +241,9 @@ export async function POST(request, { params }) {
     if (!project.finalVideoUrl && project.status !== "assembling") {
       status = "assembling";
       console.log("[process] all clips done, triggering assembly");
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL ||
-        process.env.NEXTAUTH_URL ||
-        "http://localhost:3000";
-      fetch(`${baseUrl}/api/projects/${project._id}/assemble`, {
+      // Use localhost for self-call (same server, no ngrok dependency)
+      const selfUrl = `http://localhost:${process.env.PORT || 3000}`;
+      fetch(`${selfUrl}/api/projects/${project._id}/assemble`, {
         method: "POST",
       }).catch((err) =>
         console.error("[process] assembly trigger failed:", err.message)
