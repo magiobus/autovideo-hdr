@@ -29,9 +29,7 @@ const StepGenerate = ({ formData }) => {
         propertyInfo: formData.propertyInfo,
       });
 
-      toast.success(
-        `Matched ${result.clipsCount} clips! Redirecting to project...`
-      );
+      toast.success("Project created! Redirecting…");
 
       // Redirect to project page (polling happens there)
       router.push(`/projects/${result.projectId}`);

@@ -46,9 +46,6 @@ const ProjectPage = () => {
 
   const pollStatus = async () => {
     try {
-      // Also trigger process as fallback (in case webhook didn't fire)
-      await apiClient.post(`/projects/${id}/process`).catch(() => {});
-      // Then read the latest state
       const data = await apiClient.get(`/projects/${id}`);
       setProject(data);
 

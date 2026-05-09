@@ -39,104 +39,28 @@ export async function POST(request) {
     status: "classifying",
   });
 
-  // Run Mastra workflow (classify + match)
-  try {
-    const workflow = mastra.getWorkflow("videoGenerationWorkflow");
-    const run = await workflow.createRunAsync();
-
-    const result = await run.start({
-      inputData: {
-        imageUrls: sourceImages.map((img) => img.url),
-        imageKeys: sourceImages.map((img) => img.key),
-        shots: style.shots.map((s) => ({
-          order: s.order,
-          roomType: s.roomType,
-          name: s.name || "",
-        })),
-      },
-    });
-
-    // Debug the full result shape
-    console.log("=== WORKFLOW RESULT ===");
-    console.log("status:", result.status);
-    console.log("keys:", Object.keys(result));
-    console.log("steps keys:", result.steps ? Object.keys(result.steps) : "no steps");
-    console.log("results keys:", result.results ? Object.keys(result.results) : "no results");
-
-    if (result.status === "failed") {
-      const errMsg = typeof result.error === "string"
-        ? result.error.split("\n")[0]
-        : JSON.stringify(result.error);
-      console.error("Workflow failed:", errMsg);
+  // Fire the full Mastra workflow async — it updates the DB as it progresses.
+  // The frontend polls GET /projects/:id for status.
+  const workflow = mastra.getWorkflow("videoGenerationWorkflow");
+  workflow
+    .createRunAsync()
+    .then((run) => run.start({ inputData: { projectId: project._id.toString() } }))
+    .then((result) => {
+      if (result.status === "failed") {
+        console.error("[workflow] pipeline failed:", result.error);
+      } else {
+        console.log("[workflow] pipeline completed for project", project._id);
+      }
+    })
+    .catch(async (err) => {
+      console.error("[workflow] pipeline error:", err.message);
       await Project.findByIdAndUpdate(project._id, { status: "failed" });
-      return NextResponse.json(
-        { error: "Classification failed: " + errMsg },
-        { status: 500 }
-      );
-    }
-
-    // Try both result.steps and result.results (Mastra API varies)
-    const stepsData = result.steps || result.results || {};
-    const classifyStep = stepsData["classify"];
-    const matchStep = stepsData["match"];
-
-    const matchResult = matchStep?.output;
-    const classifyResult = classifyStep?.output;
-
-    console.log("classify:", classifyStep?.status, "output keys:", classifyResult ? Object.keys(classifyResult) : "none");
-    console.log("match:", matchStep?.status, "clips:", matchResult?.clips?.length);
-
-    if (!matchResult?.clips?.length) {
-      await Project.findByIdAndUpdate(project._id, { status: "failed", progress: 0 });
-      return NextResponse.json(
-        { error: "No photos matched the style shots" },
-        { status: 400 }
-      );
-    }
-
-    const updatedImages = sourceImages.map((img) => {
-      const classification = classifyResult?.classifications?.find(
-        (c) => c.url === img.url
-      );
-      return {
-        url: img.url,
-        key: img.key,
-        classification: classification?.roomType || "unknown",
-        confidence: classification?.confidence || 0,
-      };
     });
 
-    const clips = matchResult.clips.map((clip) => ({
-      order: clip.order,
-      shotIndex: clip.shotIndex,
-      sourceImageUrl: clip.sourceImageUrl,
-      imageJob: { status: "pending" },
-      videoJob: { status: "pending" },
-    }));
-
-    await Project.findByIdAndUpdate(project._id, {
-      sourceImages: updatedImages,
-      clips,
-      status: "generating",
-      progress: 10,
-    });
-
-    return NextResponse.json({
-      projectId: project._id.toString(),
-      clipsCount: clips.length,
-      unmatchedPhotos: matchResult.unmatchedPhotos?.length || 0,
-      unmatchedShots: matchResult.unmatchedShots?.length || 0,
-    });
-  } catch (err) {
-    console.error("Workflow error:", err);
-    await Project.findByIdAndUpdate(project._id, {
-      status: "failed",
-    });
-    return NextResponse.json(
-      { error: "Classification failed: " + err.message },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({
+    projectId: project._id.toString(),
+    status: "classifying",
+  });
 }
 
 export async function GET(request) {

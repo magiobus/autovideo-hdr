@@ -4,6 +4,7 @@ import toJSON from "./plugins/toJSON";
 const jobSchema = mongoose.Schema(
   {
     falRequestId: String,
+    falModel: String,
     status: {
       type: String,
       enum: ["pending", "processing", "completed", "failed"],
