@@ -1,27 +1,25 @@
-import Link from "next/link";
 import { auth } from "@/libs/auth";
-import DbStatus from "@/components/DbStatus";
-import ButtonSignin from "@/components/ButtonSignin";
+import Navbar from "@/components/landing/Navbar";
+import Hero from "@/components/landing/Hero";
+import StylesGrid from "@/components/landing/StylesGrid";
+import Pipeline from "@/components/landing/Pipeline";
+import HowItWorks from "@/components/landing/HowItWorks";
+import CTA from "@/components/landing/CTA";
+import Footer from "@/components/landing/Footer";
 
 export default async function Home() {
   const session = await auth();
+  const authed = Boolean(session);
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-8">
-      <h1 className="text-5xl font-bold mb-4">AutoVideo HDR</h1>
-      <p className="text-xl text-base-content/70 max-w-lg text-center mb-6">
-        AI-powered real estate photo to cinematic video generation
-      </p>
-      <div className="flex flex-col items-center gap-4">
-        {session ? (
-          <Link href="/generate" className="btn btn-primary btn-lg">
-            Create Video
-          </Link>
-        ) : (
-          <ButtonSignin />
-        )}
-        <DbStatus />
-      </div>
+    <main className="min-h-screen bg-black text-white selection:bg-white/20">
+      <Navbar />
+      <Hero authed={authed} />
+      <StylesGrid />
+      <Pipeline />
+      <HowItWorks />
+      <CTA authed={authed} />
+      <Footer />
     </main>
   );
 }
