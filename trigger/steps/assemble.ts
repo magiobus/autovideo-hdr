@@ -4,7 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { connectDB, getModels, getOpenAI, getR2Client } from "../helpers";
+import { connectDB, getModels, getOpenAI, getR2Client, configureFal, fal } from "../helpers";
 
 const execAsync = promisify(exec);
 
@@ -165,23 +165,29 @@ Rules:
       const script = scriptResponse.choices[0].message.content!;
       console.log(`[assemble] voiceover script: "${script.substring(0, 80)}…"`);
 
-      const voice = styleData?.voiceover?.voice || "shimmer";
-      const speed = styleData?.voiceover?.speed || 0.95;
-
-      const speechResponse = await openai.audio.speech.create({
-        input: script,
-        model: "tts-1",
-        voice,
-        response_format: "mp3",
-        speed,
+      // ── Gemini TTS via Fal ──
+      configureFal();
+      const ttsResult = await fal.subscribe("fal-ai/gemini-tts", {
+        input: {
+          prompt: script,
+          model: "gemini-2.5-flash-tts",
+          style_instructions:
+            "Speak in a warm, confident, and polished tone — like a luxury real estate video narrator. Pace yourself slowly and clearly. Slight pauses between sentences for elegance. Sound natural and human, not robotic.",
+          output_format: "mp3",
+        },
       });
 
-      voiceoverPath = path.join(tmpDir, "voiceover.mp3");
-      await fs.writeFile(
-        voiceoverPath,
-        Buffer.from(await speechResponse.arrayBuffer())
-      );
-      console.log(`[assemble] TTS done (${voice}, ${speed}x)`);
+      const ttsData = ttsResult.data as any;
+      const audioUrl = ttsData?.audio?.url;
+
+      if (!audioUrl) {
+        console.log(`[assemble] TTS returned no audio URL, skipping voiceover`);
+      } else {
+        voiceoverPath = path.join(tmpDir, "voiceover.mp3");
+        const audioRes = await fetch(audioUrl);
+        await fs.writeFile(voiceoverPath, Buffer.from(await audioRes.arrayBuffer()));
+        console.log(`[assemble] TTS done (Gemini 2.5 Flash TTS)`);
+      }
     }
 
     // ── 6. Mix audio ──

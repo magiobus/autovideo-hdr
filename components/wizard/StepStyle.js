@@ -74,9 +74,9 @@ const StepStyle = ({ formData, setFormData }) => {
                   {style.shotCount} shots
                 </span>
                 <div className="flex flex-wrap gap-1">
-                  {style.roomTypes?.slice(0, 3).map((rt) => (
+                  {style.roomTypes?.slice(0, 3).map((rt, idx) => (
                     <span
-                      key={rt}
+                      key={idx}
                       className="badge badge-ghost badge-xs"
                     >
                       {rt.replace(/_/g, " ")}

@@ -12,6 +12,15 @@ const textOverlaySchema = mongoose.Schema(
   { _id: false }
 );
 
+const imageTransformSchema = mongoose.Schema(
+  {
+    order: { type: Number, required: true },
+    prompt: { type: String, required: true },
+    model: { type: String, default: "fal-ai/nano-banana/edit" },
+  },
+  { _id: false }
+);
+
 const shotSchema = mongoose.Schema(
   {
     order: { type: Number, required: true },
@@ -36,11 +45,14 @@ const shotSchema = mongoose.Schema(
         "patio",
       ],
     },
+    // Legacy single-pass (backward compat)
     imagePrompt: String,
     imageModel: {
       type: String,
       default: "fal-ai/nano-banana/edit",
     },
+    // Multi-pass transforms (takes priority over imagePrompt)
+    imageTransforms: [imageTransformSchema],
     videoPrompt: { type: String, required: true },
     videoModel: {
       type: String,

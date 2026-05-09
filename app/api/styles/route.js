@@ -15,7 +15,7 @@ export async function GET() {
     ...s,
     _id: s._id.toString(),
     shotCount: s.shots?.length || 0,
-    roomTypes: s.shots?.map((shot) => shot.roomType) || [],
+    roomTypes: [...new Set(s.shots?.map((shot) => shot.roomType) || [])],
   }));
 
   return NextResponse.json(result);

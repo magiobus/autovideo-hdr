@@ -9,6 +9,7 @@ import {
   POLL_INTERVAL_MS,
   MAX_POLL_ATTEMPTS,
 } from "../helpers";
+import { buildVideoInput } from "@/libs/pipeline/build-video-input";
 
 export async function generateVideos(projectId: string): Promise<string> {
   await connectDB();
@@ -34,13 +35,16 @@ export async function generateVideos(projectId: string): Promise<string> {
       continue;
     }
 
-    if (shot.imagePrompt && clip.imageJob?.status === "failed") {
+    // Skip clips where image transform failed
+    const hadTransforms = shot.imageTransforms?.length > 0 || shot.imagePrompt;
+    if (hadTransforms && clip.imageJob?.status === "failed") {
       console.log(`[videogen] clip ${i}: skipping — transform failed`);
       clip.videoJob = { status: "failed", error: "Skipped: image transform failed" };
       continue;
     }
 
     try {
+      // Determine source image
       let videoSourceUrl: string;
       if (clip.transformedImageUrl) {
         const transformedKey = `projects/${projectId}/transformed-${i}.jpg`;
@@ -62,30 +66,13 @@ export async function generateVideos(projectId: string): Promise<string> {
         throw new Error("No source image URL available");
       }
 
-      const model = shot.videoModel || "fal-ai/kling-video/v3/pro";
-      const isKling = model.includes("kling-video");
-      const endpoint =
-        isKling && !model.includes("image-to-video")
-          ? `${model}/image-to-video`
-          : model;
-
-      const prompt = clip.customVideoPrompt || shot.videoPrompt || "";
-      const duration = String(clip.customDuration || shot.duration || 5);
-
-      const input = isKling
-        ? {
-            prompt,
-            start_image_url: videoSourceUrl,
-            duration,
-            negative_prompt: "blur, distort, and low quality",
-            cfg_scale: 0.5,
-          }
-        : {
-            prompt,
-            image_url: videoSourceUrl,
-            duration,
-            aspect_ratio: (style as any).aspectRatio || "16:9",
-          };
+      const { endpoint, input } = buildVideoInput({
+        model: shot.videoModel || "fal-ai/kling-video/v3/pro",
+        imageUrl: videoSourceUrl,
+        prompt: clip.customVideoPrompt || shot.videoPrompt || "",
+        duration: clip.customDuration || shot.duration || 5,
+        aspectRatio: (style as any).aspectRatio || "16:9",
+      });
 
       console.log(`[videogen] clip ${i}: submitting to ${endpoint}`);
       const result = await fal.queue.submit(endpoint, { input });
@@ -110,6 +97,7 @@ export async function generateVideos(projectId: string): Promise<string> {
   project.markModified("clips");
   await project.save();
 
+  // ── Poll until all video jobs complete ──
   console.log(`[videogen] polling…`);
 
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
@@ -133,12 +121,13 @@ export async function generateVideos(projectId: string): Promise<string> {
             requestId: clip.videoJob.falRequestId,
           });
           const data = result.data as any;
-          const videoUrl = data?.video?.url || data?.output?.url;
+          const videoUrl =
+            data?.video?.url || data?.output?.url || data?.videos?.[0]?.url;
 
           if (videoUrl) {
             const r2Key = `projects/${projectId}/clip-${i}.mp4`;
             clip.videoUrl = await downloadAndStoreToR2(videoUrl, r2Key, "video/mp4");
-            console.log(`[videogen] clip ${i} completed → ${r2Key}`);
+            console.log(`[videogen] clip ${i} completed -> ${r2Key}`);
           } else {
             console.log(`[videogen] clip ${i} completed but no videoUrl in response`);
           }

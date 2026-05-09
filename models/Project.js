@@ -27,12 +27,24 @@ const sourceImageSchema = mongoose.Schema(
   { _id: false }
 );
 
+const transformPassSchema = mongoose.Schema(
+  {
+    order: Number,
+    inputImageUrl: String,
+    outputImageUrl: String,
+    outputR2Key: String,
+    job: jobSchema,
+  },
+  { _id: false }
+);
+
 const clipSchema = mongoose.Schema(
   {
     order: { type: Number, required: true },
     shotIndex: Number,
     sourceImageUrl: String,
     transformedImageUrl: String,
+    transformPasses: [transformPassSchema],
     imageJob: jobSchema,
     videoUrl: String,
     videoJob: jobSchema,
