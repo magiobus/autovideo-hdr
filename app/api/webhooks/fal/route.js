@@ -3,16 +3,7 @@ import connectDB from "@/libs/mongoose";
 import Project from "@/models/Project";
 import Style from "@/models/Style";
 import { downloadAndStoreToR2 } from "@/helpers/downloadAndStoreToR2";
-import { submitVideoGeneration } from "@/libs/fal";
 import { createPresignedDownloadUrl } from "@/libs/r2";
-
-function getWebhookUrl() {
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXTAUTH_URL ||
-    "http://localhost:3000";
-  return `${base}/api/webhooks/fal`;
-}
 
 export async function POST(request) {
   await connectDB();
@@ -84,13 +75,13 @@ export async function POST(request) {
               }
 
               if (videoSourceUrl) {
+                const { submitVideoGeneration } = await import("@/libs/fal");
                 const job = await submitVideoGeneration(
                   videoSourceUrl,
                   clip.customVideoPrompt || shot.videoPrompt,
                   shot.videoModel || "fal-ai/kling-video/v3/pro",
                   clip.customDuration || shot.duration || 5,
-                  style.aspectRatio || "16:9",
-                  getWebhookUrl()
+                  style.aspectRatio || "16:9"
                 );
                 clip.videoJob = {
                   falRequestId: job.requestId,

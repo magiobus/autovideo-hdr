@@ -4,15 +4,7 @@ fal.config({
   credentials: process.env.FAL_KEY || process.env.FAL_API_KEY,
 });
 
-function getWebhookUrl() {
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXTAUTH_URL ||
-    "http://localhost:3000";
-  return `${base}/api/webhooks/fal`;
-}
-
-export async function submitImageTransform(imageUrl, prompt, model, webhookUrl) {
+export async function submitImageTransform(imageUrl, prompt, model) {
   const result = await fal.queue.submit(model, {
     input: {
       image_urls: [imageUrl],
@@ -20,7 +12,6 @@ export async function submitImageTransform(imageUrl, prompt, model, webhookUrl) 
       num_images: 1,
       output_format: "jpeg",
     },
-    webhookUrl: webhookUrl || getWebhookUrl(),
   });
   return { requestId: result.request_id, model };
 }
@@ -30,10 +21,8 @@ export async function submitVideoGeneration(
   prompt,
   model,
   duration = 5,
-  aspectRatio = "16:9",
-  webhookUrl
+  aspectRatio = "16:9"
 ) {
-  // Kling v3 models need /image-to-video suffix and use start_image_url
   const isKling = model.includes("kling-video");
   const endpoint =
     isKling && !model.includes("image-to-video")
@@ -55,10 +44,7 @@ export async function submitVideoGeneration(
         aspect_ratio: aspectRatio,
       };
 
-  const result = await fal.queue.submit(endpoint, {
-    input,
-    webhookUrl: webhookUrl || getWebhookUrl(),
-  });
+  const result = await fal.queue.submit(endpoint, { input });
   return { requestId: result.request_id, model: endpoint };
 }
 
