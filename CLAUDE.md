@@ -7,7 +7,7 @@
 - Commit messages in English.
 
 ### Code
-- JavaScript only, no TypeScript.
+- TypeScript for new Mastra pipeline files (mastra/). Existing files stay as JavaScript.
 - Use DaisyUI components with Tailwind CSS.
 - Use apiClient (libs/api.js) for all frontend API requests.
 - Use react-hot-toast for notifications.

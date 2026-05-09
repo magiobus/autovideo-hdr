@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const r2Client = new S3Client({
@@ -21,6 +21,16 @@ export async function createPresignedUploadUrl(key, contentType) {
   const publicUrl = `${process.env.R2_PUBLIC_URL.replace(/\/$/, "")}/${key}`;
 
   return { signedUrl, publicUrl, key };
+}
+
+export async function createPresignedDownloadUrl(key) {
+  const command = new GetObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME,
+    Key: key,
+  });
+
+  const signedUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
+  return signedUrl;
 }
 
 export default r2Client;

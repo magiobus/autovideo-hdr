@@ -12,12 +12,17 @@ const VideoWizard = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState({
     photos: [],
-    style: "tiktok",
-    propertyInfo: "",
+    styleId: null,
+    propertyInfo: {
+      description: "",
+      address: "",
+      price: "",
+    },
   });
 
   const canGoNext = () => {
     if (currentStep === 0) return formData.photos.length > 0;
+    if (currentStep === 1) return !!formData.styleId;
     return true;
   };
 
