@@ -237,7 +237,24 @@ export async function POST(request, { params }) {
   let status = project.status;
 
   if (allDone && !anyFailed) {
-    status = "completed";
+    // Trigger assembly if not already done
+    if (!project.finalVideoUrl && project.status !== "assembling") {
+      status = "assembling";
+      console.log("[process] all clips done, triggering assembly");
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.NEXTAUTH_URL ||
+        "http://localhost:3000";
+      fetch(`${baseUrl}/api/projects/${project._id}/assemble`, {
+        method: "POST",
+      }).catch((err) =>
+        console.error("[process] assembly trigger failed:", err.message)
+      );
+    } else if (project.finalVideoUrl) {
+      status = "completed";
+    } else {
+      status = "assembling";
+    }
   } else if (anyFailed && allDone) {
     status = "failed";
   } else {

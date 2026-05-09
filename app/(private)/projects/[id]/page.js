@@ -31,7 +31,7 @@ const ProjectPage = () => {
         ["generating", "classifying", "assembling"].includes(data.status) &&
         !pollingRef.current
       ) {
-        pollingRef.current = setInterval(() => processAndFetch(), 8000);
+        pollingRef.current = setInterval(() => pollStatus(), 5000);
       }
 
       // Stop polling if done
@@ -44,9 +44,12 @@ const ProjectPage = () => {
     }
   };
 
-  const processAndFetch = async () => {
+  const pollStatus = async () => {
     try {
-      const data = await apiClient.post(`/projects/${id}/process`);
+      // Also trigger process as fallback (in case webhook didn't fire)
+      await apiClient.post(`/projects/${id}/process`).catch(() => {});
+      // Then read the latest state
+      const data = await apiClient.get(`/projects/${id}`);
       setProject(data);
 
       if (["completed", "failed"].includes(data.status) && pollingRef.current) {
@@ -123,7 +126,9 @@ const ProjectPage = () => {
             max="100"
           />
           <p className="text-sm text-base-content/50 mt-1 text-center">
-            {project.progress}%
+            {project.status === "assembling"
+              ? "Assembling final video..."
+              : `${project.progress}%`}
           </p>
         </div>
       )}
