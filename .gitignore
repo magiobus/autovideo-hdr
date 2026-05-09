@@ -39,6 +39,9 @@ HACKATHON.md
 # vercel
 .vercel
 
+# trigger.dev
+.trigger/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

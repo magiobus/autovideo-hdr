@@ -3,7 +3,7 @@ import { auth } from "@/libs/auth";
 import connectDB from "@/libs/mongoose";
 import Project from "@/models/Project";
 import Style from "@/models/Style";
-import { mastra } from "@/mastra/index";
+import { tasks } from "@trigger.dev/sdk";
 
 export async function POST(request) {
   const session = await auth();
@@ -39,23 +39,11 @@ export async function POST(request) {
     status: "classifying",
   });
 
-  // Fire the full Mastra workflow async — it updates the DB as it progresses.
+  // Trigger background job — runs on Trigger.dev infrastructure.
   // The frontend polls GET /projects/:id for status.
-  const workflow = mastra.getWorkflow("videoGenerationWorkflow");
-  workflow
-    .createRunAsync()
-    .then((run) => run.start({ inputData: { projectId: project._id.toString() } }))
-    .then((result) => {
-      if (result.status === "failed") {
-        console.error("[workflow] pipeline failed:", result.error);
-      } else {
-        console.log("[workflow] pipeline completed for project", project._id);
-      }
-    })
-    .catch(async (err) => {
-      console.error("[workflow] pipeline error:", err.message);
-      await Project.findByIdAndUpdate(project._id, { status: "failed" });
-    });
+  await tasks.trigger("video-pipeline", {
+    projectId: project._id.toString(),
+  });
 
   return NextResponse.json({
     projectId: project._id.toString(),
