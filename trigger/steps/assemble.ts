@@ -162,6 +162,7 @@ export async function assemble(projectId: string): Promise<string> {
     // ── 4. Voiceover ──
     let voiceoverPath: string | null = null;
     let voiceoverUrl: string | null = null;
+    let voiceoverDuration = renderedDuration;
     const voiceoverEnabled =
       isGenerationOptionEnabled(generationOptions.voiceover, true) &&
       styleData?.voiceover?.enabled !== false;
@@ -173,35 +174,47 @@ export async function assemble(projectId: string): Promise<string> {
         voiceoverWordLimit(project, renderedDuration)
       );
       console.log(`[assemble] voiceover script: "${script.substring(0, 120)}…"`);
-
-      // ── Gemini TTS via Fal ──
-      configureFal();
-      const ttsResult = await fal.subscribe("fal-ai/gemini-tts", {
-        input: {
-          prompt: script,
-          model: "gemini-2.5-flash-tts",
-          style_instructions: buildVoiceStyleInstructions(generationOptions.voiceover),
-          voice: getGeminiVoicePreset(generationOptions.voiceover),
-          language_code: "English (US)",
-          output_format: "mp3",
-        },
+      voiceoverPath = await synthesizeVoiceoverToFile({
+        script,
+        tmpDir,
+        filename: "voiceover.mp3",
+        voiceOptions: generationOptions.voiceover,
       });
 
-      const ttsData = ttsResult.data as any;
-      const audioUrl = ttsData?.audio?.url;
-
-      if (!audioUrl) {
-        console.log(`[assemble] TTS returned no audio URL, skipping voiceover`);
-      } else {
-        voiceoverPath = path.join(tmpDir, "voiceover.mp3");
-        const audioRes = await fetch(audioUrl);
-        if (!audioRes.ok) {
-          console.log(`[assemble] TTS audio download failed: ${audioRes.status}`);
-          voiceoverPath = null;
-        } else {
-          await fs.writeFile(voiceoverPath, Buffer.from(await audioRes.arrayBuffer()));
-          console.log(`[assemble] TTS done (Gemini 2.5 Flash TTS)`);
+      if (voiceoverPath) {
+        voiceoverDuration = await measuredDurationOrFallback(
+          voiceoverPath,
+          renderedDuration
+        );
+        if (shouldExpandVoiceover(voiceoverDuration, renderedDuration)) {
+          const expandedScript = await expandVoiceoverScript({
+            project,
+            currentScript: script,
+            targetDuration: renderedDuration,
+          });
+          if (expandedScript && expandedScript !== script) {
+            console.log(
+              `[assemble] voiceover too short (${voiceoverDuration.toFixed(
+                1
+              )}s/${renderedDuration.toFixed(1)}s), expanding script…`
+            );
+            const expandedPath = await synthesizeVoiceoverToFile({
+              script: expandedScript,
+              tmpDir,
+              filename: "voiceover-expanded.mp3",
+              voiceOptions: generationOptions.voiceover,
+            });
+            if (expandedPath) {
+              voiceoverPath = expandedPath;
+              editPlan.voiceover = expandedScript;
+              voiceoverDuration = await measuredDurationOrFallback(
+                voiceoverPath,
+                renderedDuration
+              );
+            }
+          }
         }
+        console.log(`[assemble] voiceover duration ${voiceoverDuration.toFixed(2)}s`);
       }
     }
 
@@ -223,7 +236,7 @@ export async function assemble(projectId: string): Promise<string> {
             tmpDir,
             audioUrl: voiceoverUrl,
             presenterId: generationOptions.presenter.presenterId,
-            duration: renderedDuration,
+            duration: voiceoverDuration,
           }),
           AVATAR_GENERATION_TIMEOUT_MS,
           "Talking avatar generation timed out"
@@ -299,6 +312,7 @@ export async function assemble(projectId: string): Promise<string> {
       clipDurations,
       editPlan,
       voiceoverUrl,
+      voiceoverDuration,
       presenterVideoUrl,
       musicUrl: musicAssetUrl,
       generationOptions,
@@ -454,6 +468,56 @@ function getGeminiVoicePreset(voiceOptions: any) {
   return "Charon";
 }
 
+async function synthesizeVoiceoverToFile({
+  script,
+  tmpDir,
+  filename,
+  voiceOptions,
+}: {
+  script: string;
+  tmpDir: string;
+  filename: string;
+  voiceOptions: any;
+}) {
+  configureFal();
+  const ttsResult = await fal.subscribe("fal-ai/gemini-tts", {
+    input: {
+      prompt: script,
+      model: "gemini-2.5-flash-tts",
+      style_instructions: buildVoiceStyleInstructions(voiceOptions),
+      voice: getGeminiVoicePreset(voiceOptions),
+      language_code: "English (US)",
+      output_format: "mp3",
+    },
+  });
+
+  const audioUrl = (ttsResult.data as any)?.audio?.url;
+  if (!audioUrl) {
+    console.log(`[assemble] TTS returned no audio URL, skipping voiceover`);
+    return null;
+  }
+
+  const voiceoverPath = path.join(tmpDir, filename);
+  const audioRes = await fetch(audioUrl);
+  if (!audioRes.ok) {
+    console.log(`[assemble] TTS audio download failed: ${audioRes.status}`);
+    return null;
+  }
+
+  await fs.writeFile(voiceoverPath, Buffer.from(await audioRes.arrayBuffer()));
+  console.log(`[assemble] TTS done (Gemini 2.5 Flash TTS)`);
+  return voiceoverPath;
+}
+
+async function measuredDurationOrFallback(filePath: string, fallback: number) {
+  const duration = await probeDuration(filePath);
+  return Number.isFinite(duration) && duration > 0 ? duration : fallback;
+}
+
+function shouldExpandVoiceover(voiceoverDuration: number, targetDuration: number) {
+  return targetDuration >= 14 && voiceoverDuration < targetDuration * 0.78;
+}
+
 async function generateMusicWithFal({
   tmpDir,
   duration,
@@ -569,7 +633,8 @@ async function createEditPlan({
     const openai = getOpenAI();
     const ownerNotes = compactNarrationNote(project.propertyInfo?.narrationNotes);
     const hasOwnerNotes = ownerNotes.length > 0;
-    const maxWords = voiceoverWordLimit(project, totalDuration);
+    const wordBudget = voiceoverWordBudget(project, totalDuration);
+    const maxWords = wordBudget.max;
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
@@ -591,6 +656,7 @@ Rules:
 - If owner notes are provided, make them the primary content of the voiceover. Reuse the requested topics and plain nouns directly when natural.
 - Do not translate casual notes into upscale real-estate language. If notes say hackathon, community, snacks, founders, families, remote work, etc., say those ideas plainly.
 - It is okay if the requested content is not about real estate. Do not force every script into a home-tour or luxury framing.
+- The voiceover should cover most of the video, about 85-95% of ${Math.round(totalDuration)} seconds. Aim for ${wordBudget.target} words, stay between ${wordBudget.min} and ${wordBudget.max} words.
 - Use 2-5 short spoken lines. Natural cadence. Contractions are good. No rhyming. No grand abstractions.
 - Start with the user-requested idea when owner notes are present; otherwise start with a grounded visual observation.
 - Use visible home details only when they support the requested talking points.
@@ -659,6 +725,49 @@ Good voiceover:
   }
 }
 
+async function expandVoiceoverScript({
+  project,
+  currentScript,
+  targetDuration,
+}: {
+  project: any;
+  currentScript: string;
+  targetDuration: number;
+}) {
+  try {
+    const openai = getOpenAI();
+    const ownerNotes = compactNarrationNote(project.propertyInfo?.narrationNotes);
+    const wordBudget = voiceoverWordBudget(project, targetDuration);
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Expand this spoken voiceover so it fills most of the video duration. Keep it casual and human. Preserve all user-requested talking points plainly. Do not add luxury real-estate filler. Return only the revised script, no JSON.",
+        },
+        {
+          role: "user",
+          content: `Target video duration: ${targetDuration.toFixed(1)} seconds.
+Target word count: ${wordBudget.target} words. Acceptable range: ${wordBudget.min}-${wordBudget.max} words.
+Required talking points: ${ownerNotes || "(none)"}
+
+Current script:
+${currentScript}`,
+        },
+      ],
+      max_tokens: 500,
+    });
+    return cleanVoiceover(
+      response.choices[0].message.content || "",
+      wordBudget.max
+    );
+  } catch (err: any) {
+    console.log(`[assemble] voiceover expansion failed: ${err.message}`);
+    return "";
+  }
+}
+
 function normalizeEditPlan(
   input: any,
   fallback: EditPlan,
@@ -716,11 +825,23 @@ function cleanVoiceover(script: string, maxWords = 58) {
 }
 
 function voiceoverWordLimit(project: any, durationSeconds: number) {
+  return voiceoverWordBudget(project, durationSeconds).max;
+}
+
+function voiceoverWordBudget(project: any, durationSeconds: number) {
   const hasNotes = compactNarrationNote(project.propertyInfo?.narrationNotes).length > 0;
-  const wordsPerSecond = hasNotes ? 1.65 : 1.05;
-  const minWords = hasNotes ? 28 : 24;
-  const maxWords = hasNotes ? 86 : 58;
-  return Math.max(minWords, Math.min(maxWords, Math.floor(durationSeconds * wordsPerSecond)));
+  const targetWps = hasNotes ? 2.25 : 2.05;
+  const minWps = hasNotes ? 1.85 : 1.65;
+  const maxWps = hasNotes ? 2.75 : 2.45;
+  const baseMin = durationSeconds < 12 ? 14 : hasNotes ? 34 : 28;
+  const min = Math.max(baseMin, Math.floor(durationSeconds * minWps));
+  const target = Math.max(min, Math.round(durationSeconds * targetWps));
+  const max = Math.max(target + 10, Math.ceil(durationSeconds * maxWps));
+  return {
+    min: Math.min(min, 150),
+    target: Math.min(target, 170),
+    max: Math.min(max, 190),
+  };
 }
 
 function tightenVoiceover(script: string) {
@@ -783,7 +904,7 @@ function buildFallbackVoiceover({
   feature: string;
   shotDetail: string;
 }) {
-  if (notes) return cleanVoiceover(notes, 86);
+  if (notes) return cleanVoiceover(notes, 160);
 
   const opener = location
     ? `${location} sets the tone without forcing it.`

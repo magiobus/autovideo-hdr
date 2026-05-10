@@ -31,6 +31,7 @@ export function createEditorState({
   clipDurations,
   editPlan,
   voiceoverUrl,
+  voiceoverDuration,
   presenterVideoUrl,
   musicUrl,
   generationOptions,
@@ -42,6 +43,7 @@ export function createEditorState({
   clipDurations: number[];
   editPlan: EditPlan;
   voiceoverUrl?: string | null;
+  voiceoverDuration?: number | null;
   presenterVideoUrl?: string | null;
   musicUrl?: string | null;
   generationOptions?: any;
@@ -54,6 +56,12 @@ export function createEditorState({
   const starts = getClipStarts(clipDurations, transitionSeconds);
   const duration = effectiveDuration(clipDurations, transitionSeconds);
   const dimensions = resolveEditorDimensions(generationOptions);
+  const voiceoverTrackDuration = voiceoverUrl
+    ? Math.min(
+        duration,
+        Math.max(0.1, Number(voiceoverDuration) || duration)
+      )
+    : 0;
   const videoItems: EditorItem[] = clips.map((clip, index) => ({
     id: `clip-${index}`,
     kind: "video",
@@ -106,7 +114,7 @@ export function createEditorState({
       kind: "audio",
       sourceUrl: voiceoverUrl,
       start: 0,
-      duration,
+      duration: voiceoverTrackDuration,
       volume: 1,
       trackIndex: 50,
     });
@@ -134,7 +142,7 @@ export function createEditorState({
       kind: "bubble",
       sourceUrl: presenterUrl,
       start: voiceoverUrl ? 0 : 0.75,
-      duration: voiceoverUrl ? duration : Math.max(0.1, duration - 1.5),
+      duration: voiceoverUrl ? voiceoverTrackDuration : Math.max(0.1, duration - 1.5),
       trimStart: 0,
       trackIndex: 35,
       x: dimensions.width > dimensions.height ? 1260 : 560,
@@ -166,6 +174,7 @@ export function createEditorState({
     },
     artifacts: {
       ...(voiceoverUrl ? { voiceoverUrl } : {}),
+      ...(voiceoverUrl && voiceoverDuration ? { voiceoverDuration } : {}),
       ...(presenterVideoUrl ? { presenterVideoUrl } : {}),
       ...(musicUrl ? { musicUrl } : {}),
     },
