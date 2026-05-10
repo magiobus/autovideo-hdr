@@ -19,7 +19,15 @@ export type EditorItem = {
   sourceUrl?: string;
   text?: string;
   kicker?: string;
-  styleVariant?: "lower-third" | "glass-card" | "headline" | "signal";
+  styleVariant?:
+    | "lower-third"
+    | "glass-card"
+    | "headline"
+    | "signal"
+    | "estate-lower"
+    | "estate-title"
+    | "estate-spec"
+    | "estate-price";
   fontSize?: number;
   textColor?: string;
   kickerColor?: string;
@@ -38,7 +46,19 @@ export type EditorItem = {
   height?: number;
   shape?: "circle" | "rounded";
   transition?: {
-    type: "none" | "crossfade" | "fade" | "slide-up" | "zoom";
+    type:
+      | "none"
+      | "crossfade"
+      | "blur-crossfade"
+      | "focus-pull"
+      | "push-slide"
+      | "color-dip-black"
+      | "light-leak-soft"
+      | "fade"
+      | "slide-up"
+      | "editorial-rise"
+      | "shimmer-rise"
+      | "zoom";
     duration: number;
   };
 };
@@ -62,7 +82,10 @@ export type EditorState = {
   editPlan?: any;
   visualEffects?: {
     grain?: boolean;
+    grainOpacity?: number;
     lightLeak?: boolean;
+    lightLeakOpacity?: number;
+    preset?: string;
   };
 };
 
@@ -81,6 +104,8 @@ export function buildHyperframesComposition(
     )
     .join("\n");
   const effects = editorState.visualEffects || { grain: true, lightLeak: true };
+  const grainOpacity = numberAttr(clampNumber(effects.grainOpacity ?? 0.08, 0, 0.2));
+  const lightLeakOpacity = numberAttr(clampNumber(effects.lightLeakOpacity ?? 0.08, 0, 0.24));
   const timelineScript = buildAnimationTimeline(editorState);
 
   return `<!doctype html>
@@ -135,6 +160,82 @@ export function buildHyperframesComposition(
     }
     .support.variant-headline { max-width: 980px; min-width: 0; background: transparent; }
     .support.variant-headline h1 { font-size: var(--font-size, 86px); font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
+    .support.variant-estate-lower,
+    .support.variant-estate-title,
+    .support.variant-estate-spec,
+    .support.variant-estate-price {
+      min-width: 0;
+      max-width: 720px;
+      padding: 18px 22px 20px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 6px;
+      background: var(--panel-bg, rgba(8,9,10,.58));
+      box-shadow: 0 24px 60px rgba(0,0,0,.32);
+      backdrop-filter: blur(14px) saturate(118%);
+      text-shadow: none;
+      overflow: hidden;
+    }
+    .support.variant-estate-lower::before,
+    .support.variant-estate-title::before,
+    .support.variant-estate-price::before {
+      content: "";
+      position: absolute;
+      left: 22px;
+      right: 22px;
+      top: 14px;
+      height: 1px;
+      background: rgba(255,255,255,.34);
+    }
+    .support.variant-estate-lower span,
+    .support.variant-estate-title span,
+    .support.variant-estate-spec span,
+    .support.variant-estate-price span {
+      margin: 0 0 9px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .16em;
+      color: var(--kicker-color, rgba(216,211,200,.74));
+    }
+    .support.variant-estate-lower h1,
+    .support.variant-estate-title h1,
+    .support.variant-estate-spec h1,
+    .support.variant-estate-price h1 {
+      font-family: Helvetica, Arial, sans-serif;
+      font-size: var(--font-size, 38px);
+      font-weight: 500;
+      line-height: 1.06;
+      letter-spacing: 0;
+    }
+    .support.variant-estate-title {
+      max-width: 820px;
+      padding: 24px 28px 26px;
+      background: linear-gradient(90deg, rgba(0,0,0,.68), rgba(0,0,0,.34));
+    }
+    .support.variant-estate-title h1 {
+      font-size: var(--font-size, 44px);
+      font-weight: 540;
+    }
+    .support.variant-estate-spec {
+      max-width: 560px;
+      padding: 17px 20px 18px;
+      border-radius: 0;
+      border-left: 3px solid var(--accent-color, #d7c6a0);
+      background: rgba(4,5,6,.64);
+    }
+    .support.variant-estate-spec h1 {
+      font-size: var(--font-size, 36px);
+      font-weight: 620;
+    }
+    .support.variant-estate-price {
+      max-width: 640px;
+      padding: 22px 26px 24px;
+      border-color: rgba(255,255,255,.24);
+      background: rgba(0,0,0,.64);
+    }
+    .support.variant-estate-price h1 {
+      font-size: var(--font-size, 42px);
+      font-weight: 580;
+    }
     .bubble { z-index: 35; overflow: hidden; border: 6px solid rgba(255,255,255,.88); box-shadow: 0 22px 60px rgba(0,0,0,.34); background: rgba(255,255,255,.08); }
     .bubble.circle { border-radius: 9999px; }
     .bubble.rounded { border-radius: 34px; }
@@ -155,8 +256,10 @@ export function buildHyperframesComposition(
     .hf-resize-handle.ne { right: -23px; top: -23px; cursor: nesw-resize; }
     .hf-resize-handle.sw { left: -23px; bottom: -23px; cursor: nesw-resize; }
     .hf-resize-handle.se { right: -23px; bottom: -23px; cursor: nwse-resize; }
-    .grain-overlay { position: absolute; inset: -20%; z-index: 80; pointer-events: none; opacity: .12; mix-blend-mode: overlay; background-image: radial-gradient(circle at 20% 30%, rgba(255,255,255,.85) 0 1px, transparent 1px), radial-gradient(circle at 70% 40%, rgba(255,255,255,.55) 0 1px, transparent 1px), radial-gradient(circle at 40% 80%, rgba(0,0,0,.55) 0 1px, transparent 1px); background-size: 9px 9px, 13px 13px, 17px 17px; animation: grain-shift .9s steps(5) infinite; }
-    .light-leak-overlay { position: absolute; inset: 0; z-index: 78; pointer-events: none; opacity: 0; mix-blend-mode: screen; background: radial-gradient(circle at 8% 40%, rgba(255,196,128,.58), transparent 32%), radial-gradient(circle at 100% 18%, rgba(125,211,252,.24), transparent 28%); animation: light-leak 7.5s ease-in-out infinite; }
+    .dip-overlay { position:absolute; inset:0; z-index:76; pointer-events:none; background:#000; opacity:0; }
+    .cut-light-leak { position:absolute; left:-240px; top:-140px; width:2520px; height:1360px; z-index:77; pointer-events:none; opacity:0; mix-blend-mode:screen; background:radial-gradient(circle at 14% 48%, rgba(255,205,136,.42), rgba(255,205,136,0) 34%), radial-gradient(circle at 86% 20%, rgba(255,244,214,.18), rgba(255,244,214,0) 28%); }
+    .grain-overlay { position: absolute; inset: -20%; z-index: 80; pointer-events: none; opacity: ${grainOpacity}; mix-blend-mode: overlay; background-image: radial-gradient(circle at 20% 30%, rgba(255,255,255,.85) 0 1px, rgba(255,255,255,0) 1px), radial-gradient(circle at 70% 40%, rgba(255,255,255,.55) 0 1px, rgba(255,255,255,0) 1px), radial-gradient(circle at 40% 80%, rgba(0,0,0,.55) 0 1px, rgba(0,0,0,0) 1px); background-size: 9px 9px, 13px 13px, 17px 17px; animation: grain-shift .9s steps(5) infinite; }
+    .light-leak-overlay { position: absolute; inset: 0; z-index: 78; pointer-events: none; opacity: 0; mix-blend-mode: screen; background: radial-gradient(circle at 8% 40%, rgba(255,196,128,.46), rgba(255,196,128,0) 32%), radial-gradient(circle at 100% 18%, rgba(255,236,198,.18), rgba(255,236,198,0) 28%); animation: light-leak 8.5s ease-in-out infinite; }
     @keyframes grain-shift {
       0% { transform: translate3d(0,0,0); }
       25% { transform: translate3d(-2%,1%,0); }
@@ -166,7 +269,7 @@ export function buildHyperframesComposition(
     }
     @keyframes light-leak {
       0%, 70%, 100% { opacity: 0; transform: translateX(-10%); }
-      10% { opacity: .18; transform: translateX(0); }
+      10% { opacity: ${lightLeakOpacity}; transform: translateX(0); }
       26% { opacity: .06; transform: translateX(8%); }
     }
   </style>
@@ -175,6 +278,8 @@ export function buildHyperframesComposition(
 <div id="hf-stage">
 <div data-composition-id="autohdr-video-studio" data-start="0" data-duration="${duration.toFixed(2)}" data-width="${width}" data-height="${height}">
 ${body}
+<div class="dip-overlay" data-hf-transition-overlay="dip"></div>
+<div class="cut-light-leak" data-hf-transition-overlay="light"></div>
 ${effects.grain ? `<div class="grain-overlay"></div>` : ""}
 ${effects.lightLeak ? `<div class="light-leak-overlay"></div>` : ""}
 </div>
@@ -252,6 +357,8 @@ function buildAnimationTimeline(editorState: EditorState) {
   const items = ${JSON.stringify(timelineItems)};
   if (!window.gsap) return;
   const tl = gsap.timeline({ paused: true });
+  const dipOverlay = document.querySelector('[data-hf-transition-overlay="dip"]');
+  const lightOverlay = document.querySelector('[data-hf-transition-overlay="light"]');
   for (const item of items) {
     const el = document.querySelector('[data-item-id="' + CSS.escape(item.id) + '"]');
     if (!el) continue;
@@ -259,8 +366,40 @@ function buildAnimationTimeline(editorState: EditorState) {
     const d = Math.max(0.1, Math.min(item.transitionDuration, item.duration / 2));
     tl.set(el, { opacity: 0, visibility: 'hidden' }, 0);
     tl.set(el, { visibility: 'visible' }, item.start);
-    if (item.type === 'slide-up') {
+    if (item.kind === 'video') {
+      tl.set(el, { opacity: 0, x: 0, y: 0, scale: 1, filter: 'blur(0px) brightness(1)' }, item.start);
+      if (item.type === 'push-slide') {
+        tl.fromTo(el, { opacity: 1, x: 120 }, { opacity: 1, x: 0, duration: d, ease: 'power2.out' }, item.start);
+      } else if (item.type === 'blur-crossfade') {
+        tl.fromTo(el, { opacity: 0, filter: 'blur(20px) brightness(.96)' }, { opacity: 1, filter: 'blur(0px) brightness(1)', duration: d, ease: 'sine.inOut' }, item.start);
+      } else if (item.type === 'focus-pull') {
+        tl.fromTo(el, { opacity: 0, scale: 1.018, filter: 'blur(14px) brightness(.98)' }, { opacity: 1, scale: 1, filter: 'blur(0px) brightness(1)', duration: d * 1.1, ease: 'sine.inOut' }, item.start);
+      } else {
+        tl.to(el, { opacity: 1, duration: d, ease: 'power1.out' }, item.start);
+      }
+
+      if (item.type === 'push-slide') {
+        tl.to(el, { x: -90, opacity: 0, duration: d, ease: 'power2.in' }, Math.max(item.start, end - d));
+      } else if (item.type === 'blur-crossfade' || item.type === 'focus-pull') {
+        tl.to(el, { opacity: 0, filter: 'blur(18px) brightness(.98)', duration: d, ease: 'sine.inOut' }, Math.max(item.start, end - d));
+      } else {
+        tl.to(el, { opacity: 0, duration: d, ease: 'power1.in' }, Math.max(item.start, end - d));
+      }
+
+      if (item.type === 'color-dip-black' && dipOverlay) {
+        tl.to(dipOverlay, { opacity: 0.88, duration: d / 2, ease: 'power1.in' }, Math.max(item.start, end - d));
+        tl.to(dipOverlay, { opacity: 0, duration: d / 2, ease: 'power1.out' }, Math.max(item.start, end - d / 2));
+      }
+      if (item.type === 'light-leak-soft' && lightOverlay) {
+        tl.fromTo(lightOverlay, { opacity: 0, x: -120 }, { opacity: 0.18, x: 0, duration: d / 2, ease: 'sine.inOut' }, Math.max(item.start, end - d));
+        tl.to(lightOverlay, { opacity: 0, x: 120, duration: d / 2, ease: 'sine.inOut' }, Math.max(item.start, end - d / 2));
+      }
+    } else if (item.type === 'slide-up') {
       tl.fromTo(el, { opacity: 0, y: 48 }, { opacity: 1, y: 0, duration: d, ease: 'power2.out' }, item.start);
+    } else if (item.type === 'editorial-rise') {
+      tl.fromTo(el, { opacity: 0, y: 26, filter: 'blur(4px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: d, ease: 'sine.out' }, item.start);
+    } else if (item.type === 'shimmer-rise') {
+      tl.fromTo(el, { opacity: 0, y: 22, filter: 'brightness(1.22)' }, { opacity: 1, y: 0, filter: 'brightness(1)', duration: d, ease: 'power2.out' }, item.start);
     } else if (item.type === 'zoom') {
       tl.fromTo(el, { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: d, ease: 'power2.out' }, item.start);
     } else {
@@ -288,6 +427,11 @@ function isVideoUrl(value: string) {
 
 function numberAttr(value: number) {
   return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
 }
 
 function escapeHtml(value: string) {

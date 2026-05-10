@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_AVATAR_TIMEOUT_MS = 600_000;
 const AVATAR_FPS = 24;
 const MAX_AVATAR_SECONDS = 24;
-const DEFAULT_FAL_AVATAR_MODEL = "fal-ai/ai-avatar";
+const DEFAULT_FAL_AVATAR_MODEL = "fal-ai/kling-video/v1/standard/ai-avatar";
 
 export async function syncPresenterAvatarForProject(projectId: string) {
   await connectDB();
@@ -140,23 +140,16 @@ export async function generatePresenterAvatarVideo({
     Math.max(2, Number(duration) || 6)
   );
   const model = process.env.AVATAR_FAL_MODEL || DEFAULT_FAL_AVATAR_MODEL;
-  const isInfiniTalk = model === "fal-ai/infinitalk";
-  const numFrames = isInfiniTalk
-    ? Math.min(721, Math.max(41, Math.ceil(avatarDuration * AVATAR_FPS)))
-    : Math.min(129, Math.max(81, Math.ceil(Math.min(avatarDuration, 5.35) * AVATAR_FPS)));
-  console.log(`[avatar] generating talking presenter with ${model} (${numFrames} frames)…`);
+  console.log(`[avatar] generating talking presenter with ${model}…`);
   let result: any;
   try {
     result = await fal.subscribe(model, {
-      input: {
-        image_url: presenterImageUrl,
-        audio_url: audioUrl,
-        prompt:
-          "Professional real estate presenter speaking naturally to camera. Natural blinking, realistic lip sync, subtle head movement, calm friendly expression, polished but not theatrical.",
-        num_frames: numFrames,
-        resolution: "480p",
-        acceleration: resolveAvatarAcceleration(),
-      },
+      input: buildAvatarInput({
+        model,
+        presenterImageUrl,
+        audioUrl,
+        avatarDuration,
+      }),
       logs: true,
       onQueueUpdate: (update: any) => {
         if (update.status === "IN_PROGRESS") {
@@ -291,6 +284,48 @@ async function uploadFileToR2({
     })
   );
   return `${process.env.R2_PUBLIC_URL!.replace(/\/$/, "")}/${key}`;
+}
+
+function buildAvatarInput({
+  model,
+  presenterImageUrl,
+  audioUrl,
+  avatarDuration,
+}: {
+  model: string;
+  presenterImageUrl: string;
+  audioUrl: string;
+  avatarDuration: number;
+}) {
+  const prompt =
+    "Professional presenter speaking naturally to camera. Natural blinking, realistic lip sync, subtle head movement, calm friendly expression, polished but not theatrical.";
+
+  if (model === "fal-ai/infinitalk") {
+    return {
+      image_url: presenterImageUrl,
+      audio_url: audioUrl,
+      prompt,
+      num_frames: Math.min(
+        721,
+        Math.max(41, Math.ceil(avatarDuration * AVATAR_FPS))
+      ),
+      resolution: "480p",
+      acceleration: resolveAvatarAcceleration(),
+    };
+  }
+
+  if (model === "fal-ai/hunyuan-avatar") {
+    return {
+      image_url: presenterImageUrl,
+      audio_url: audioUrl,
+    };
+  }
+
+  return {
+    image_url: presenterImageUrl,
+    audio_url: audioUrl,
+    prompt,
+  };
 }
 
 function findEditorItem(editorState: any, itemId: string) {

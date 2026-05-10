@@ -7,6 +7,15 @@ import {
   type EditorState,
 } from "./hyperframes-composition";
 
+type EditStylePreset = {
+  id: "architectural-luxe" | "editorial-listing" | "warm-lifestyle";
+  transitionPrimary: "blur-crossfade" | "focus-pull" | "push-slide";
+  transitionAccent: "color-dip-black" | "light-leak-soft" | "push-slide";
+  transitionDuration: number;
+  grainOpacity: number;
+  lightLeak: boolean;
+};
+
 type EditPlan = {
   voiceover?: string;
   supportText?: Array<{
@@ -40,8 +49,10 @@ export function createEditorState({
   finalVideoUrl?: string;
   finalVideoKey?: string;
 }): EditorState {
-  const starts = getClipStarts(clipDurations, DEFAULT_TRANSITION_SECONDS);
-  const duration = effectiveDuration(clipDurations, DEFAULT_TRANSITION_SECONDS);
+  const editStyle = resolveEditStyle(generationOptions);
+  const transitionSeconds = editStyle.transitionDuration;
+  const starts = getClipStarts(clipDurations, transitionSeconds);
+  const duration = effectiveDuration(clipDurations, transitionSeconds);
   const dimensions = resolveEditorDimensions(generationOptions);
   const videoItems: EditorItem[] = clips.map((clip, index) => ({
     id: `clip-${index}`,
@@ -55,7 +66,10 @@ export function createEditorState({
     trackIndex: index % 2,
     transition:
       index < clips.length - 1
-        ? { type: "crossfade", duration: DEFAULT_TRANSITION_SECONDS }
+        ? {
+            type: transitionForCut(editStyle, index, clips.length),
+            duration: transitionSeconds,
+          }
         : undefined,
   }));
 
@@ -65,17 +79,24 @@ export function createEditorState({
     clipIndex: item.clipIndex,
     text: item.headline,
     kicker: item.kicker || "",
-    styleVariant: index === 0 ? "lower-third" : index % 2 === 0 ? "signal" : "glass-card",
-    fontSize: index === 0 ? 50 : 44,
+    styleVariant: textStyleForOverlay({
+      editStyle,
+      item,
+      index,
+      clipCount: clips.length,
+    }),
+    fontSize: index === 0 ? 44 : 38,
     textColor: "#ffffff",
-    kickerColor: "#d8b4fe",
-    accentColor: "#c084fc",
-    backgroundColor: "rgba(10,12,16,.62)",
+    kickerColor: editStyle.id === "warm-lifestyle" ? "#e7c9a5" : "#d8d3c8",
+    accentColor: editStyle.id === "editorial-listing" ? "#d7c6a0" : "#ffffff",
+    backgroundColor: editStyle.id === "warm-lifestyle"
+      ? "rgba(24,18,13,.58)"
+      : "rgba(8,9,10,.58)",
     position: item.position || "bottom-left",
-    start: (starts[item.clipIndex] || 0) + 0.45,
+    start: (starts[item.clipIndex] || 0) + 0.55,
     duration: Math.min(3.1, Math.max(1.8, (clipDurations[item.clipIndex] || 5) - 1)),
     trackIndex: 20 + item.clipIndex,
-    transition: { type: "slide-up", duration: 0.35 },
+    transition: { type: "editorial-rise", duration: 0.45 },
   }));
 
   const voiceoverItems: EditorItem[] = [];
@@ -130,7 +151,7 @@ export function createEditorState({
     height: dimensions.height,
     fps: 30,
     duration,
-    transitionSeconds: DEFAULT_TRANSITION_SECONDS,
+    transitionSeconds,
     tracks: [
       { id: "video", type: "video", label: "Video", items: videoItems },
       { id: "overlay", type: "overlay", label: "Overlays", items: overlayItems },
@@ -151,10 +172,87 @@ export function createEditorState({
     editPlan,
     visualEffects: {
       grain: true,
-      lightLeak: true,
+      grainOpacity: editStyle.grainOpacity,
+      lightLeak: editStyle.lightLeak,
+      lightLeakOpacity: editStyle.id === "warm-lifestyle" ? 0.12 : 0.06,
+      preset: editStyle.id,
     },
     ...(generationOptions ? { generationOptions } : {}),
   } as EditorState;
+}
+
+function resolveEditStyle(generationOptions?: any): EditStylePreset {
+  const preset = String(
+    generationOptions?.editStyle?.presetId ||
+      generationOptions?.editStyle ||
+      "architectural-luxe"
+  );
+
+  if (preset === "editorial-listing") {
+    return {
+      id: "editorial-listing",
+      transitionPrimary: "push-slide",
+      transitionAccent: "color-dip-black",
+      transitionDuration: 0.5,
+      grainOpacity: 0.07,
+      lightLeak: false,
+    };
+  }
+
+  if (preset === "warm-lifestyle") {
+    return {
+      id: "warm-lifestyle",
+      transitionPrimary: "focus-pull",
+      transitionAccent: "light-leak-soft",
+      transitionDuration: 0.7,
+      grainOpacity: 0.1,
+      lightLeak: true,
+    };
+  }
+
+  return {
+    id: "architectural-luxe",
+    transitionPrimary: "blur-crossfade",
+    transitionAccent: "color-dip-black",
+    transitionDuration: 0.65,
+    grainOpacity: 0.08,
+    lightLeak: false,
+  };
+}
+
+function transitionForCut(
+  editStyle: EditStylePreset,
+  cutIndex: number,
+  clipCount: number
+): NonNullable<EditorItem["transition"]>["type"] {
+  const isClosingCut = cutIndex >= clipCount - 2;
+  const isMiddleSection = cutIndex === 2 || cutIndex === 5;
+
+  if (isClosingCut) return "color-dip-black";
+  if (editStyle.id === "warm-lifestyle" && cutIndex === 0) return "light-leak-soft";
+  if (editStyle.id === "editorial-listing" && isMiddleSection) return "color-dip-black";
+  if (isMiddleSection) return editStyle.transitionAccent;
+  return editStyle.transitionPrimary;
+}
+
+function textStyleForOverlay({
+  editStyle,
+  item,
+  index,
+  clipCount,
+}: {
+  editStyle: EditStylePreset;
+  item: NonNullable<EditPlan["supportText"]>[number];
+  index: number;
+  clipCount: number;
+}): EditorItem["styleVariant"] {
+  const text = `${item.headline || ""} ${item.kicker || ""}`;
+  if (index === 0) return "estate-title";
+  if (item.clipIndex >= clipCount - 1 || /\$|price|offered|available/i.test(text)) {
+    return "estate-price";
+  }
+  if (editStyle.id === "editorial-listing") return "estate-spec";
+  return "estate-lower";
 }
 
 function resolveEditorDimensions(generationOptions?: any) {

@@ -84,10 +84,30 @@ const MUSIC_PRESETS = [
   { id: "editorial-luxury", label: "Editorial Luxury", sampleUrl: "/samples/music/editorial-luxury.wav", prompt: "editorial luxury music bed, elegant synth pads, subtle percussion, polished, expensive, no vocals" },
 ];
 
+const EDIT_STYLE_PRESETS = [
+  {
+    id: "architectural-luxe",
+    label: "Architectural Luxe",
+    description: "Soft blur transitions, restrained lower thirds, subtle grain.",
+  },
+  {
+    id: "editorial-listing",
+    label: "Editorial Listing",
+    description: "Cleaner data-forward cards, section pushes, listing details.",
+  },
+  {
+    id: "warm-lifestyle",
+    label: "Warm Lifestyle",
+    description: "Gentle focus pulls, warmer captions, very light leaks.",
+  },
+];
+
 const TEXT_STYLE_PRESETS = [
-  { id: "lower-third", label: "Lower third" },
-  { id: "glass-card", label: "Glass card" },
-  { id: "signal", label: "Signal" },
+  { id: "estate-lower", label: "Estate lower" },
+  { id: "estate-title", label: "Title card" },
+  { id: "estate-spec", label: "Spec callout" },
+  { id: "estate-price", label: "Price / close" },
+  { id: "lower-third", label: "Classic lower" },
   { id: "headline", label: "Big headline" },
 ];
 
@@ -303,6 +323,9 @@ const CreateForm = ({ onCreated }) => {
     format: {
       aspectRatio: "16:9",
     },
+    editStyle: {
+      presetId: "architectural-luxe",
+    },
     voiceover: {
       enabled: true,
       gender: "male",
@@ -429,6 +452,16 @@ const CreateForm = ({ onCreated }) => {
       format: {
         ...(prev.format || {}),
         aspectRatio,
+      },
+    }));
+  };
+
+  const updateEditStyle = (presetId) => {
+    setGenerationOptions((prev) => ({
+      ...prev,
+      editStyle: {
+        ...(prev.editStyle || {}),
+        presetId,
       },
     }));
   };
@@ -591,6 +624,34 @@ const CreateForm = ({ onCreated }) => {
             </span>
             <span className="min-w-0 text-sm font-medium">Portrait</span>
           </button>
+        </div>
+      </div>
+
+      <div>
+        <h3 className={labelClass}>Edit Style</h3>
+        <div className="space-y-2">
+          {EDIT_STYLE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => updateEditStyle(preset.id)}
+              className={`${optionButtonClass} ${
+                generationOptions.editStyle?.presetId === preset.id
+                  ? "border-white/25 bg-white/[0.09] text-white"
+                  : "border-white/5 bg-white/[0.03] text-white/50 hover:border-white/12 hover:bg-white/[0.05]"
+              }`}
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-current/35 text-[10px] font-semibold">
+                HF
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">{preset.label}</span>
+                <span className="mt-0.5 block text-xs text-white/35">
+                  {preset.description}
+                </span>
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1357,6 +1418,7 @@ const ProjectDetail = ({ project, onRefresh }) => {
       ) : (
         project.clips?.length > 0 && (
           <ClipTimeline
+            project={project}
             clips={project.clips}
             selectedClip={selectedClip}
             onSelect={(i) => setSelectedClip(selectedClip === i ? null : i)}
@@ -2070,11 +2132,15 @@ const TextPanel = ({ item, onChange, embedded = false }) => {
               onClick={() =>
                 onChange({
                   styleVariant: preset.id,
-                  fontSize: preset.id === "headline" ? 86 : item.fontSize || 48,
+                  fontSize: preset.id === "headline"
+                    ? 86
+                    : preset.id === "estate-spec"
+                      ? 36
+                      : item.fontSize || 40,
                 })
               }
               className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
-                (item.styleVariant || "lower-third") === preset.id
+                (item.styleVariant || "estate-lower") === preset.id
                   ? "border-white/30 bg-white/12 text-white"
                   : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/[0.06]"
               }`}
@@ -2086,7 +2152,7 @@ const TextPanel = ({ item, onChange, embedded = false }) => {
         <div className="mt-3 grid grid-cols-2 gap-2">
           <NumberField
             label="Size"
-            value={item.fontSize || (item.styleVariant === "headline" ? 86 : 48)}
+            value={item.fontSize || (item.styleVariant === "headline" ? 86 : 40)}
             onChange={(fontSize) =>
               onChange({ fontSize: clampNumber(fontSize, 24, 132) })
             }
@@ -2108,6 +2174,8 @@ const TextPanel = ({ item, onChange, embedded = false }) => {
             >
               <option value="none">None</option>
               <option value="fade">Fade</option>
+              <option value="editorial-rise">Editorial rise</option>
+              <option value="shimmer-rise">Shimmer rise</option>
               <option value="slide-up">Slide up</option>
               <option value="zoom">Zoom</option>
             </select>
@@ -2123,13 +2191,13 @@ const TextPanel = ({ item, onChange, embedded = false }) => {
           <ColorField
             label="Kicker"
             value={item.kickerColor}
-            fallback="#d8b4fe"
+            fallback="#d8d3c8"
             onChange={(kickerColor) => onChange({ kickerColor })}
           />
           <ColorField
             label="Accent"
             value={item.accentColor}
-            fallback="#c084fc"
+            fallback="#d7c6a0"
             onChange={(accentColor) => onChange({ accentColor })}
           />
           <ColorField
@@ -2180,7 +2248,7 @@ const TextPanel = ({ item, onChange, embedded = false }) => {
 // ═══════════════════════════════════════════════════
 // CLIP TIMELINE
 // ═══════════════════════════════════════════════════
-const ClipTimeline = ({ clips, selectedClip, onSelect }) => (
+const ClipTimeline = ({ project, clips, selectedClip, onSelect }) => (
   <div className="border-t border-white/5 bg-black/70 px-4 py-3 backdrop-blur-xl">
     <div className="flex items-center gap-2 overflow-x-auto pb-1">
       {clips.map((clip, i) => {
@@ -2238,9 +2306,68 @@ const ClipTimeline = ({ clips, selectedClip, onSelect }) => (
           </button>
         );
       })}
+      {project.generationOptions?.presenter?.enabled && (
+        <AvatarAssetTile project={project} />
+      )}
     </div>
   </div>
 );
+
+const AvatarAssetTile = ({ project }) => {
+  const presenterId = project.generationOptions?.presenter?.presenterId || "male-1";
+  const avatarStatus = project.editorState?.avatar?.status;
+  const isWorking =
+    avatarStatus === "generating" ||
+    (project.status === "assembling" && avatarStatus !== "rendered");
+  const isDone = avatarStatus === "rendered";
+  const isFailed = avatarStatus === "failed";
+
+  return (
+    <div
+      className={`relative aspect-video w-28 shrink-0 overflow-hidden rounded-xl border transition-all ${
+        isDone
+          ? "border-cyan-300/40 opacity-90"
+          : isFailed
+            ? "border-rose-400/35 opacity-60"
+            : isWorking
+              ? "border-cyan-300/25 opacity-80"
+              : "border-white/5 opacity-60"
+      }`}
+      title="Talking avatar"
+    >
+      <img
+        src={`/samples/presenters/${presenterId}.jpg`}
+        alt=""
+        className="h-full w-full object-cover"
+      />
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1 pt-5 text-left">
+        <span className="block truncate text-[10px] font-medium text-white">
+          Avatar
+        </span>
+      </div>
+      {isWorking && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/45">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+        </div>
+      )}
+      <span className="absolute bottom-1 left-1 rounded-full bg-cyan-400/20 px-1.5 py-0.5 font-mono text-[10px] text-cyan-100 ring-1 ring-cyan-300/20">
+        A
+      </span>
+      <StatusDot
+        status={
+          isDone
+            ? "completed"
+            : isFailed
+              ? "failed"
+              : isWorking
+                ? "generating"
+                : "draft"
+        }
+        className="absolute right-1 top-1"
+      />
+    </div>
+  );
+};
 
 // ═══════════════════════════════════════════════════
 // CLIP PANEL — Right side detail
