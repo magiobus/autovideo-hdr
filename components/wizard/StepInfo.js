@@ -52,6 +52,28 @@ const StepInfo = ({ formData, setFormData }) => {
           onChange={handleChange("description")}
         />
       </label>
+
+      <label className="form-control w-full">
+        <div className="label">
+          <span className="label-text">
+            Narration notes{" "}
+            <span className="text-base-content/40 font-normal">
+              (optional)
+            </span>
+          </span>
+        </div>
+        <textarea
+          placeholder={`Things you'd like mentioned in the voiceover, e.g.:\n• Great for entertaining — huge BBQ area\n• Walking distance to downtown\n• Recently renovated kitchen with Italian marble\n• Ski-in/ski-out access`}
+          className="textarea textarea-bordered w-full h-28"
+          value={formData.propertyInfo?.narrationNotes || ""}
+          onChange={handleChange("narrationNotes")}
+        />
+        <div className="label">
+          <span className="label-text-alt text-base-content/30">
+            The AI will combine your notes with what it sees in the photos
+          </span>
+        </div>
+      </label>
     </div>
   );
 };

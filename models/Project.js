@@ -23,6 +23,7 @@ const sourceImageSchema = mongoose.Schema(
     key: String,
     classification: String,
     confidence: Number,
+    features: String,
   },
   { _id: false }
 );
@@ -71,6 +72,7 @@ const projectSchema = mongoose.Schema(
       description: String,
       address: String,
       price: String,
+      narrationNotes: String,
     },
     sourceImages: [sourceImageSchema],
     clips: [clipSchema],

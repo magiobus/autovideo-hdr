@@ -173,33 +173,61 @@ export async function assemble(projectId: string): Promise<string> {
     if (voiceoverEnabled) {
       console.log(`[assemble] generating voiceover…`);
       const openai = getOpenAI();
-      const maxWords = Math.floor(totalDuration * 2.2);
+      // Sparse narration: ~1 word per second, lots of breathing room
+      const maxWords = Math.floor(totalDuration * 1.0);
 
       const scriptResponse = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [
           {
+            role: "system",
+            content: `You are a world-class luxury real estate video narrator. You write sparse, cinematic, poetic scripts — NOT informational tours.
+
+Your style reference (study this tone):
+"What if I told you the best part of this house wasn't a room at all, but 8,000 square feet of sky and stone? Deer Valley's East Village in Park City, Utah. First residence in a rising village. Ski to the terrace. Boots off. Sauna steam. Inside, radiant floors. Floor to ceiling glass, walnut, and white oak. Access close. Horizon wide."
+
+Key principles:
+- Sell the EXPERIENCE and FEELING, never describe rooms like a brochure
+- Use short, punchy sentence fragments. "Boots off. Sauna steam." NOT "The home features a sauna."
+- Mention real materials and textures when provided (walnut, marble, glass)
+- Open with a provocative hook — a question, a contrast, an image — NEVER "Welcome to..."
+- NEVER invent features, amenities, or details that aren't in the provided description
+- If you don't have enough info, be poetic about the FEELING of the space
+- Address and location should feel woven in naturally, not announced
+- Price only if provided, mentioned casually at the end or not at all
+- Leave room for silence — the video breathes on its own
+- Maximum ${maxWords} words. Less is more. Every word must earn its place.`,
+          },
+          {
             role: "user",
-            content: `Write a short, professional real estate video narration script.
+            content: `Write the narration script for this property video.
 
-Property: ${project.propertyInfo?.address || "Luxury Property"}
-Price: ${project.propertyInfo?.price || "Contact for pricing"}
-Description: ${project.propertyInfo?.description || "A beautiful, well-appointed home with stunning features throughout"}
-Video duration: ${totalDuration} seconds, ${completedClips.length} scenes.
+ADDRESS: ${project.propertyInfo?.address || "(not provided)"}
+PRICE: ${project.propertyInfo?.price || "(not provided)"}
+DESCRIPTION: ${project.propertyInfo?.description || "(not provided)"}
 
-Rules:
-- Maximum ${maxWords} words (about 2.2 words per second pace)
-- Professional, warm, inviting tone — like a luxury real estate video tour
-- Mention the address naturally at the start
-- Mention the price at the end if provided
-- Flowing narration, NO bullet points or lists
-- Return ONLY the script text, nothing else`,
+OWNER'S NOTES (things they want mentioned):
+${project.propertyInfo?.narrationNotes || "(none)"}
+
+VISUAL FEATURES DETECTED IN PHOTOS:
+${(project.sourceImages || []).filter((img: any) => img.features).map((img: any) => `- ${img.features}`).join("\n") || "(none)"}
+
+Video: ${totalDuration} seconds, ${completedClips.length} scenes.
+
+IMPORTANT:
+- Use the owner's notes as guidance for what to highlight
+- Use the detected visual features for specific, real details (materials, textures, views)
+- NEVER invent features not present in the notes or detected features
+- If there's very little info, keep it extremely minimal — mood and atmosphere only
+- Weave the real details into the poetic narration naturally
+
+Return ONLY the narration text. No stage directions, no timestamps, no labels.`,
           },
         ],
       });
 
       const script = scriptResponse.choices[0].message.content!;
-      console.log(`[assemble] voiceover script: "${script.substring(0, 80)}…"`);
+      console.log(`[assemble] voiceover script: "${script.substring(0, 120)}…"`);
 
       // ── Gemini TTS via Fal ──
       configureFal();
@@ -208,7 +236,7 @@ Rules:
           prompt: script,
           model: "gemini-2.5-flash-tts",
           style_instructions:
-            "Speak in a warm, confident, and polished tone — like a luxury real estate video narrator. Pace yourself slowly and clearly. Slight pauses between sentences for elegance. Sound natural and human, not robotic.",
+            "Speak slowly and deliberately, like a luxury brand narrator. Deep, warm, confident voice. Long pauses between sentences — let the words breathe. Understated, not dramatic. Think Rolex ad, not infomercial.",
           output_format: "mp3",
         },
       });

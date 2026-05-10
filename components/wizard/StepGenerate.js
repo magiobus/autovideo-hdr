@@ -31,8 +31,8 @@ const StepGenerate = ({ formData }) => {
 
       toast.success("Project created! Redirecting…");
 
-      // Redirect to project page (polling happens there)
-      router.push(`/projects/${result.projectId}`);
+      // Redirect to unified projects page
+      router.push(`/projects`);
     } catch (err) {
       setPhase("failed");
       setError(err?.response?.data?.error || err.message);

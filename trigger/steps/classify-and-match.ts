@@ -76,11 +76,16 @@ RULES:
 - A photo CAN be assigned to a shot with a different room type if the composition is a genuinely good fit and no better option exists
 - Prioritize filling the most important shots: establishing (first), kitchen, primary suite, outdoor, closing
 
+Also, for EVERY photo (not just assigned ones), describe the notable visual features you see — materials, textures, standout elements, views, lighting conditions. These will be used for the video narration, so focus on things that are visually interesting or would sell the property.
+
 Return JSON:
 {
   "assignments": [
-    { "shotIndex": 0, "photoIndex": 3, "roomType": "exterior_front", "reason": "wide front view of the house" },
-    { "shotIndex": 1, "photoIndex": 7, "roomType": "living_room", "reason": "entry angle looking into living space" }
+    { "shotIndex": 0, "photoIndex": 3, "roomType": "exterior_front", "reason": "wide front view of the house" }
+  ],
+  "photoFeatures": [
+    { "photoIndex": 0, "features": "open-concept living room with floor-to-ceiling windows, hardwood floors, mountain view through glass" },
+    { "photoIndex": 1, "features": "modern kitchen with white marble island, brass fixtures, natural light from skylight" }
   ]
 }
 
@@ -90,7 +95,7 @@ There are ${sourceImages.length} photos.`,
         ],
       },
     ],
-    max_tokens: 2000,
+    max_tokens: 3000,
   });
 
   const parsed = JSON.parse(response.choices[0].message.content || "{}");
@@ -99,6 +104,10 @@ There are ${sourceImages.length} photos.`,
     photoIndex: number;
     roomType: string;
     reason: string;
+  }>;
+  const photoFeatures = (parsed.photoFeatures || []) as Array<{
+    photoIndex: number;
+    features: string;
   }>;
 
   if (!assignments || assignments.length === 0) {
@@ -113,6 +122,11 @@ There are ${sourceImages.length} photos.`,
     console.log(
       `[classify] photo ${a.photoIndex} → ${shotName} (${a.roomType}): ${a.reason}`
     );
+  }
+
+  // ── Log detected features ──
+  for (const pf of photoFeatures) {
+    console.log(`[classify] photo ${pf.photoIndex} features: ${pf.features}`);
   }
 
   // ── Validate: no duplicate photos, no duplicate shots ──
@@ -144,11 +158,13 @@ There are ${sourceImages.length} photos.`,
   // ── Persist ──
   project.sourceImages = sourceImages.map((img: any, i: number) => {
     const assignment = validAssignments.find((a) => a.photoIndex === i);
+    const pf = photoFeatures.find((f) => f.photoIndex === i);
     return {
       url: img.url,
       key: img.key,
       classification: assignment?.roomType || "unassigned",
       confidence: assignment ? 1.0 : 0,
+      features: pf?.features || "",
     };
   });
 
