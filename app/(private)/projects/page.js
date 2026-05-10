@@ -36,6 +36,14 @@ const VOICE_PRESETS = [
     sampleUrl: "/samples/voices/male-editorial.mp3?v=2",
   },
   {
+    id: "male-casual",
+    gender: "male",
+    label: "Casual",
+    tone: "friendly, relaxed, conversational",
+    sample: "This place has an easy rhythm. Bright rooms, clean finishes, and space that feels simple to settle into.",
+    sampleUrl: "/samples/voices/male-casual.mp3?v=1",
+  },
+  {
     id: "female-architect",
     gender: "female",
     label: "Architect",
@@ -51,12 +59,20 @@ const VOICE_PRESETS = [
     sample: "Stone, light, and proportion. Every detail lands quietly.",
     sampleUrl: "/samples/voices/female-editorial.mp3?v=2",
   },
+  {
+    id: "female-casual",
+    gender: "female",
+    label: "Casual",
+    tone: "friendly, natural, conversational",
+    sample: "It feels bright right away. Simple spaces, thoughtful details, and a layout that makes everyday life feel easy.",
+    sampleUrl: "/samples/voices/female-casual.mp3?v=1",
+  },
 ];
 
 const PRESENTER_PRESETS = [
-  { id: "male-1", gender: "male", name: "Julian", initials: "JL", imageUrl: "/samples/presenters/male-1.jpg", tone: "calm advisor" },
-  { id: "male-2", gender: "male", name: "Marcus", initials: "MR", imageUrl: "/samples/presenters/male-2.jpg", tone: "editorial host" },
-  { id: "male-3", gender: "male", name: "Theo", initials: "TH", imageUrl: "/samples/presenters/male-3.jpg", tone: "luxury broker" },
+  { id: "male-1", gender: "male", name: "Jake", initials: "JK", imageUrl: "/samples/presenters/male-1.jpg", tone: "calm advisor" },
+  { id: "male-2", gender: "male", name: "Eddy", initials: "ED", imageUrl: "/samples/presenters/male-2.jpg", tone: "editorial host" },
+  { id: "male-3", gender: "male", name: "Matt", initials: "MT", imageUrl: "/samples/presenters/male-3.jpg", tone: "luxury broker" },
   { id: "female-1", gender: "female", name: "Sofia", initials: "SF", imageUrl: "/samples/presenters/female-1.jpg", tone: "warm host" },
   { id: "female-2", gender: "female", name: "Mara", initials: "MA", imageUrl: "/samples/presenters/female-2.jpg", tone: "premium guide" },
   { id: "female-3", gender: "female", name: "Elena", initials: "EL", imageUrl: "/samples/presenters/female-3.jpg", tone: "editorial narrator" },
@@ -66,6 +82,13 @@ const MUSIC_PRESETS = [
   { id: "minimal-house", label: "Minimal House", sampleUrl: "/samples/music/minimal-house.wav", prompt: "minimal ambient house, soft pulse, premium architectural film, no vocals" },
   { id: "cinematic-piano", label: "Cinematic Piano", sampleUrl: "/samples/music/cinematic-piano.wav", prompt: "soft cinematic piano, warm pads, restrained low pulse, emotional but understated, no vocals" },
   { id: "editorial-luxury", label: "Editorial Luxury", sampleUrl: "/samples/music/editorial-luxury.wav", prompt: "editorial luxury music bed, elegant synth pads, subtle percussion, polished, expensive, no vocals" },
+];
+
+const TEXT_STYLE_PRESETS = [
+  { id: "lower-third", label: "Lower third" },
+  { id: "glass-card", label: "Glass card" },
+  { id: "signal", label: "Signal" },
+  { id: "headline", label: "Big headline" },
 ];
 
 const Logo = () => (
@@ -277,6 +300,9 @@ const CreateForm = ({ onCreated }) => {
     narrationNotes: "",
   });
   const [generationOptions, setGenerationOptions] = useState({
+    format: {
+      aspectRatio: "16:9",
+    },
     voiceover: {
       enabled: true,
       gender: "male",
@@ -393,6 +419,16 @@ const CreateForm = ({ onCreated }) => {
       [field]: {
         ...prev[field],
         ...patch,
+      },
+    }));
+  };
+
+  const updateFormat = (aspectRatio) => {
+    setGenerationOptions((prev) => ({
+      ...prev,
+      format: {
+        ...(prev.format || {}),
+        aspectRatio,
       },
     }));
   };
@@ -523,6 +559,40 @@ const CreateForm = ({ onCreated }) => {
           </select>
         </div>
       )}
+
+      <div>
+        <h3 className={labelClass}>Format</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => updateFormat("16:9")}
+            className={`${optionButtonClass} ${
+              generationOptions.format?.aspectRatio === "16:9"
+                ? "border-white/25 bg-white/[0.09] text-white"
+                : "border-white/5 bg-white/[0.03] text-white/45 hover:border-white/12 hover:bg-white/[0.05]"
+            }`}
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-current/40 text-xs font-semibold">
+              16:9
+            </span>
+            <span className="min-w-0 text-sm font-medium">Landscape</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => updateFormat("9:16")}
+            className={`${optionButtonClass} ${
+              generationOptions.format?.aspectRatio === "9:16"
+                ? "border-white/25 bg-white/[0.09] text-white"
+                : "border-white/5 bg-white/[0.03] text-white/45 hover:border-white/12 hover:bg-white/[0.05]"
+            }`}
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-current/40 text-xs font-semibold">
+              9:16
+            </span>
+            <span className="min-w-0 text-sm font-medium">Portrait</span>
+          </button>
+        </div>
+      </div>
 
       {/* Creative layers */}
       <div>
@@ -753,7 +823,7 @@ const CreateForm = ({ onCreated }) => {
       <div>
         <h3 className={labelClass}>Creative Direction</h3>
         <textarea
-          placeholder={"Optional notes:\n• quiet luxury\n• moody kitchen details\n• emphasize daylight and texture"}
+          placeholder={"Talking points the voiceover must include:\n• say this is great for a hackathon\n• mention the community and snacks all day\n• keep it casual, like a friend explaining the place"}
           className={`${textareaClass} h-28`}
           value={propertyInfo.narrationNotes}
           onChange={handleChange("narrationNotes")}
@@ -794,12 +864,15 @@ const CreateForm = ({ onCreated }) => {
 // ═══════════════════════════════════════════════════
 const ProjectDetail = ({ project, onRefresh }) => {
   const previewRef = useRef(null);
+  const previewTimeRef = useRef(0);
+  const pendingPreviewSeekRef = useRef(null);
   const [selectedClip, setSelectedClip] = useState(null);
   const [editorDraft, setEditorDraft] = useState(null);
   const [selectedTextId, setSelectedTextId] = useState(null);
   const [selectedOverlayId, setSelectedOverlayId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [rendering, setRendering] = useState(false);
+  const [avatarGenerating, setAvatarGenerating] = useState(false);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const presenterEnabled =
@@ -842,6 +915,7 @@ const ProjectDetail = ({ project, onRefresh }) => {
   const hasEditor = Boolean(editorState);
   const isRenderDirty = editorState?.render?.status === "dirty";
   const previewDuration = Math.max(0.1, editorState?.duration || 0.1);
+  const previewAspectRatio = `${editorState?.width || 1920} / ${editorState?.height || 1080}`;
   const livePreviewHtml = useMemo(
     () =>
       editorState
@@ -862,9 +936,34 @@ const ProjectDetail = ({ project, onRefresh }) => {
   }, [previewTime]);
 
   useEffect(() => {
+    previewTimeRef.current = previewTime;
+  }, [previewTime]);
+
+  useEffect(() => {
+    if (hasEditor) pendingPreviewSeekRef.current = previewTimeRef.current;
+  }, [hasEditor, livePreviewHtml]);
+
+  useEffect(() => {
     const handleMessage = (event) => {
       if (event.data?.type !== "autohdr-preview-time") return;
-      setPreviewTime(event.data.time || 0);
+      const nextTime = event.data.time || 0;
+      const pendingTime = pendingPreviewSeekRef.current;
+      if (
+        pendingTime !== null &&
+        pendingTime > 0.05 &&
+        nextTime === 0 &&
+        !event.data.playing
+      ) {
+        return;
+      }
+      if (
+        pendingTime !== null &&
+        Math.abs(nextTime - pendingTime) < 0.15
+      ) {
+        pendingPreviewSeekRef.current = null;
+      }
+      previewTimeRef.current = nextTime;
+      setPreviewTime(nextTime);
       setIsPreviewPlaying(Boolean(event.data.playing));
     };
     window.addEventListener("message", handleMessage);
@@ -892,12 +991,13 @@ const ProjectDetail = ({ project, onRefresh }) => {
 
   const syncPreviewAfterLoad = useCallback(() => {
     window.setTimeout(() => {
-      sendPreviewCommand("seek", previewTime);
-      if (isPreviewPlaying) sendPreviewCommand("play", previewTime);
+      const targetTime = pendingPreviewSeekRef.current ?? previewTimeRef.current;
+      sendPreviewCommand("seek", targetTime);
+      if (isPreviewPlaying) sendPreviewCommand("play", targetTime);
     }, 0);
-  }, [isPreviewPlaying, previewTime, sendPreviewCommand]);
+  }, [isPreviewPlaying, sendPreviewCommand]);
 
-  const updateEditorState = (updater) => {
+  const updateEditorState = useCallback((updater) => {
     setEditorDraft((current) => {
       const prev =
         current?.projectId === project._id
@@ -915,7 +1015,7 @@ const ProjectDetail = ({ project, onRefresh }) => {
         }),
       };
     });
-  };
+  }, [project._id, project.editorState]);
 
   const saveEditor = async () => {
     if (!editorState) return;
@@ -948,7 +1048,22 @@ const ProjectDetail = ({ project, onRefresh }) => {
     }
   };
 
-  const updateTrackItem = (trackId, itemId, patch) => {
+  const generateTalkingAvatar = async () => {
+    if (!editorState) return;
+    setAvatarGenerating(true);
+    try {
+      if (isRenderDirty) await saveEditor();
+      await apiClient.post(`/projects/${project._id}/avatar`);
+      toast.success("Talking avatar updated");
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || err.message);
+    } finally {
+      setAvatarGenerating(false);
+    }
+  };
+
+  const updateTrackItem = useCallback((trackId, itemId, patch) => {
     updateEditorState((prev) => ({
       ...prev,
       tracks: prev.tracks.map((track) =>
@@ -959,10 +1074,88 @@ const ProjectDetail = ({ project, onRefresh }) => {
                 item.id === itemId ? { ...item, ...patch } : item
               ),
             }
+          : trackId === "voiceover" && itemId === "voiceover" && track.id === "overlay"
+          ? {
+              ...track,
+              items: track.items.map((item) =>
+                item.id === "presenter-bubble"
+                  ? {
+                      ...item,
+                      ...(Number.isFinite(patch.start) ? { start: patch.start } : {}),
+                      ...(Number.isFinite(patch.duration)
+                        ? { duration: patch.duration }
+                        : {}),
+                      ...(Number.isFinite(patch.trimStart)
+                        ? { trimStart: patch.trimStart }
+                        : {}),
+                    }
+                  : item
+              ),
+            }
           : track
       ),
     }));
+  }, [updateEditorState]);
+
+  const deleteTimelineItem = (trackId, itemId) => {
+    updateEditorState((prev) => {
+      const target = prev.tracks
+        .find((track) => track.id === trackId)
+        ?.items.find((item) => item.id === itemId);
+
+      return {
+        ...prev,
+        tracks: prev.tracks.map((track) => {
+          if (track.id === trackId) {
+            return {
+              ...track,
+              items: track.items.filter((item) => item.id !== itemId),
+            };
+          }
+          if (trackId === "voiceover" && itemId === "voiceover" && track.id === "overlay") {
+            return {
+              ...track,
+              items: track.items.filter((item) => item.id !== "presenter-bubble"),
+            };
+          }
+          if (trackId === "video" && Number.isInteger(target?.clipIndex)) {
+            return {
+              ...track,
+              items: track.items.filter((item) => item.clipIndex !== target.clipIndex),
+            };
+          }
+          return track;
+        }),
+      };
+    });
+    if (trackId === "text" && selectedTextId === itemId) setSelectedTextId(null);
+    if (trackId === "overlay" && selectedOverlayId === itemId) setSelectedOverlayId(null);
   };
+
+  useEffect(() => {
+    const handlePreviewEdit = (event) => {
+      const data = event.data || {};
+      if (
+        data.type !== "autohdr-preview-edit" &&
+        data.type !== "autohdr-preview-select"
+      ) {
+        return;
+      }
+      const trackId = data.kind === "bubble" ? "overlay" : "text";
+      if (trackId === "overlay") {
+        setSelectedOverlayId(data.itemId);
+        setSelectedTextId(null);
+      } else {
+        setSelectedTextId(data.itemId);
+        setSelectedOverlayId(null);
+      }
+      if (data.type === "autohdr-preview-edit") {
+        updateTrackItem(trackId, data.itemId, data.patch || {});
+      }
+    };
+    window.addEventListener("message", handlePreviewEdit);
+    return () => window.removeEventListener("message", handlePreviewEdit);
+  }, [updateTrackItem]);
 
   const updateTextItem = (itemId, patch) => {
     updateEditorState((prev) => ({
@@ -1028,7 +1221,7 @@ const ProjectDetail = ({ project, onRefresh }) => {
               onClick={renderProject}
               disabled={rendering || project.status === "rendering"}
             >
-              {rendering || project.status === "rendering" ? "Rendering..." : "Render"}
+              {rendering || project.status === "rendering" ? "Exporting..." : "Export MP4"}
             </button>
           )}
           {project.finalVideoUrl && (
@@ -1051,13 +1244,14 @@ const ProjectDetail = ({ project, onRefresh }) => {
         {/* Video preview */}
         <div className="flex flex-1 items-center justify-center p-6">
           {hasEditor ? (
-            <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
+            <div className="max-h-full w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
               <iframe
                 ref={previewRef}
                 key={project._id}
                 title="Video edit preview"
                 srcDoc={livePreviewHtml}
-                className="aspect-video w-full"
+                className="w-full"
+                style={{ aspectRatio: previewAspectRatio }}
                 allow="autoplay; fullscreen"
                 onLoad={syncPreviewAfterLoad}
               />
@@ -1104,6 +1298,9 @@ const ProjectDetail = ({ project, onRefresh }) => {
             textItems={textItems}
             activeOverlay={activeOverlay}
             activeText={activeText}
+            voiceoverItems={voiceoverItems}
+            avatarStatus={editorState?.avatar?.status}
+            avatarGenerating={avatarGenerating}
             onSelectOverlay={(id) => {
               setSelectedOverlayId(id);
               setSelectedTextId(null);
@@ -1115,6 +1312,7 @@ const ProjectDetail = ({ project, onRefresh }) => {
             onOverlayChange={(patch) =>
               activeOverlay && updateOverlayItem(activeOverlay.id, patch)
             }
+            onGenerateAvatar={generateTalkingAvatar}
             onTextChange={(patch) =>
               activeText && updateTextItem(activeText.id, patch)
             }
@@ -1146,6 +1344,7 @@ const ProjectDetail = ({ project, onRefresh }) => {
           isPlaying={isPreviewPlaying}
           onSeek={seekPreview}
           onItemChange={updateTrackItem}
+          onItemDelete={deleteTimelineItem}
           onSelectText={(id) => {
             setSelectedTextId(id);
             setSelectedOverlayId(null);
@@ -1231,6 +1430,7 @@ const EditorTimeline = ({
   isPlaying,
   onSeek,
   onItemChange,
+  onItemDelete,
   onSelectText,
   onSelectOverlay,
 }) => {
@@ -1267,7 +1467,12 @@ const EditorTimeline = ({
         <div className="min-w-max">
           <div className="mb-1 grid grid-cols-[86px_1fr] gap-2">
             <div />
-            <TimeRuler duration={timelineDuration} width={trackWidth} />
+            <TimeRuler
+              currentTime={currentTime}
+              duration={timelineDuration}
+              width={trackWidth}
+              onSeek={onSeek}
+            />
           </div>
           <TimelineTrack label="Video" width={trackWidth} currentTime={currentTime} duration={timelineDuration} onSeek={onSeek}>
             {videoItems.map((item, index) => (
@@ -1279,6 +1484,7 @@ const EditorTimeline = ({
                 duration={timelineDuration}
                 color="pink"
                 onChange={onItemChange}
+                onDelete={onItemDelete}
               >
                 <div className="flex h-full items-center gap-2 px-2">
                   <div className="h-10 w-16 shrink-0 overflow-hidden rounded bg-black/20">
@@ -1310,6 +1516,7 @@ const EditorTimeline = ({
                 color="cyan"
                 selected={selectedOverlayId === item.id}
                 onChange={onItemChange}
+                onDelete={onItemDelete}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelectOverlay(item.id);
@@ -1335,6 +1542,7 @@ const EditorTimeline = ({
                 color="violet"
                 selected={selectedTextId === item.id}
                 onChange={onItemChange}
+                onDelete={onItemDelete}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelectText(item.id);
@@ -1361,6 +1569,7 @@ const EditorTimeline = ({
                   duration={timelineDuration}
                   color="emerald"
                   onChange={onItemChange}
+                  onDelete={onItemDelete}
                 >
                   <span className="block truncate font-medium">Voiceover</span>
                   <span className="block font-mono text-[10px] opacity-65">
@@ -1381,6 +1590,7 @@ const EditorTimeline = ({
                   duration={timelineDuration}
                   color="amber"
                   onChange={onItemChange}
+                  onDelete={onItemDelete}
                 >
                   <span className="block truncate font-medium">Music bed</span>
                   <span className="block font-mono text-[10px] opacity-65">
@@ -1419,14 +1629,24 @@ const TimelineTrack = ({ label, width, currentTime, duration, onSeek, children }
   </div>
 );
 
-const TimeRuler = ({ duration, width }) => {
+const TimeRuler = ({ currentTime, duration, width, onSeek }) => {
   const marks = Array.from({ length: Math.floor(duration / 5) + 1 }, (_, i) => i * 5);
   return (
-    <div className="relative h-6" style={{ width }}>
+    <div
+      className="relative h-8 cursor-col-resize select-none rounded-md hover:bg-white/[0.025]"
+      style={{ width }}
+      onPointerDown={(event) =>
+        startTimelineScrub({ event, duration, onSeek })
+      }
+    >
+      <div
+        className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-rose-400"
+        style={{ left: `${Math.min(100, Math.max(0, (currentTime / duration) * 100))}%` }}
+      />
       {marks.map((mark) => (
         <div
           key={mark}
-          className="absolute top-0 h-full border-l border-white/10 pl-1 font-mono text-[10px] text-white/30"
+          className="absolute top-0 h-full border-l border-white/10 pl-1 pt-1 font-mono text-[10px] text-white/30"
           style={{ left: `${(mark / duration) * 100}%` }}
         >
           {mark}s
@@ -1434,6 +1654,26 @@ const TimeRuler = ({ duration, width }) => {
       ))}
     </div>
   );
+};
+
+const startTimelineScrub = ({ event, duration, onSeek }) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const target = event.currentTarget;
+  const seekFromEvent = (pointerEvent) => {
+    const rect = target.getBoundingClientRect();
+    const ratio = (pointerEvent.clientX - rect.left) / rect.width;
+    onSeek(Math.max(0, Math.min(duration, ratio * duration)));
+  };
+  const stop = () => {
+    window.removeEventListener("pointermove", seekFromEvent);
+    window.removeEventListener("pointerup", stop);
+  };
+
+  seekFromEvent(event);
+  window.addEventListener("pointermove", seekFromEvent);
+  window.addEventListener("pointerup", stop, { once: true });
 };
 
 const TimelineBlock = ({
@@ -1444,6 +1684,7 @@ const TimelineBlock = ({
   color,
   selected = false,
   onChange,
+  onDelete,
   onClick,
   children,
 }) => {
@@ -1476,7 +1717,7 @@ const TimelineBlock = ({
       type="button"
       onPointerDown={(event) => startEdit(event, "move")}
       onClick={onClick || ((event) => event.stopPropagation())}
-      className={`absolute top-1 h-12 overflow-hidden rounded-lg border text-left text-xs shadow-sm transition hover:ring-2 ${colorClass}`}
+      className={`group absolute top-1 h-12 overflow-hidden rounded-lg border text-left text-xs shadow-sm transition hover:ring-2 ${colorClass}`}
       style={timelineBlockStyle(item, width, duration)}
     >
       <span
@@ -1485,6 +1726,29 @@ const TimelineBlock = ({
         className="absolute bottom-0 left-0 top-0 z-10 w-3 cursor-ew-resize bg-white/10 opacity-0 transition hover:opacity-100"
       />
       <div className="h-full min-w-0 px-3 py-2">{children}</div>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label="Delete timeline item"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onDelete(trackId, item.id);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onDelete(trackId, item.id);
+        }}
+        className="absolute right-1 top-1 z-20 flex h-5 w-5 items-center justify-center rounded-full bg-black/45 text-[11px] font-semibold leading-none text-white/65 opacity-0 transition hover:bg-black/70 hover:text-white group-hover:opacity-100"
+      >
+        ×
+      </span>
       <span
         role="presentation"
         onPointerDown={(event) => startEdit(event, "trim-right")}
@@ -1567,14 +1831,24 @@ const formatTime = (seconds) => {
   return `${minutes}:${String(wholeSeconds).padStart(2, "0")}.${tenths}`;
 };
 
+const normalizeColor = (value, fallback) =>
+  typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+
+const clampNumber = (value, min, max) =>
+  Math.min(max, Math.max(min, Number(value) || min));
+
 const EditorInspector = ({
   overlayItems,
   textItems,
   activeOverlay,
   activeText,
+  voiceoverItems,
+  avatarStatus,
+  avatarGenerating,
   onSelectOverlay,
   onSelectText,
   onOverlayChange,
+  onGenerateAvatar,
   onTextChange,
 }) => (
   <aside className="flex w-96 shrink-0 flex-col overflow-hidden border-l border-white/5 bg-black/70 backdrop-blur-xl">
@@ -1612,7 +1886,15 @@ const EditorInspector = ({
       </div>
     </div>
     {activeOverlay ? (
-      <BubblePanel item={activeOverlay} onChange={onOverlayChange} embedded />
+      <BubblePanel
+        item={activeOverlay}
+        onChange={onOverlayChange}
+        hasVoiceover={voiceoverItems.length > 0}
+        avatarStatus={avatarStatus}
+        avatarGenerating={avatarGenerating}
+        onGenerateAvatar={onGenerateAvatar}
+        embedded
+      />
     ) : activeText ? (
       <TextPanel item={activeText} onChange={onTextChange} embedded />
     ) : (
@@ -1621,7 +1903,17 @@ const EditorInspector = ({
   </aside>
 );
 
-const BubblePanel = ({ item, onChange, embedded = false }) => {
+const BubblePanel = ({
+  item,
+  onChange,
+  hasVoiceover = false,
+  avatarStatus,
+  avatarGenerating = false,
+  onGenerateAvatar,
+  embedded = false,
+}) => {
+  const hasTalkingVideo = /\.(mp4|mov|webm)(\?|#|$)/i.test(item.sourceUrl || "");
+  const isGenerating = avatarGenerating || avatarStatus === "generating";
   const content = (
     <>
       <div className="border-b border-white/5 px-4 py-4">
@@ -1637,6 +1929,31 @@ const BubblePanel = ({ item, onChange, embedded = false }) => {
           />
         ) : null}
       </div>
+      <button
+        type="button"
+        onClick={onGenerateAvatar}
+        disabled={!hasVoiceover || isGenerating}
+        className={`${ghostButtonClass} flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40`}
+      >
+        {isGenerating && (
+          <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white" />
+        )}
+        {isGenerating
+          ? "Generating talking avatar..."
+          : hasTalkingVideo
+            ? "Regenerate talking avatar"
+            : "Generate talking avatar"}
+      </button>
+      {!hasVoiceover && (
+        <p className="text-xs text-white/35">
+          Add a voiceover first so the presenter can lip-sync to it.
+        </p>
+      )}
+      {avatarStatus === "failed" && (
+        <p className="text-xs text-rose-300">
+          Avatar generation failed. You can retry with the button above.
+        </p>
+      )}
       <div>
         <p className="mb-1 text-xs text-white/40">Shape</p>
         <select
@@ -1689,6 +2006,23 @@ const NumberField = ({ label, value, onChange, step = "1" }) => (
   </label>
 );
 
+const ColorField = ({ label, value, fallback, onChange }) => (
+  <label className="block">
+    <span className="mb-1 block text-xs text-white/40">{label}</span>
+    <span className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2">
+      <input
+        type="color"
+        value={normalizeColor(value, fallback)}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-6 w-8 shrink-0 cursor-pointer border-0 bg-transparent p-0"
+      />
+      <span className="min-w-0 truncate font-mono text-xs text-white/55">
+        {normalizeColor(value, fallback)}
+      </span>
+    </span>
+  </label>
+);
+
 const TextPanel = ({ item, onChange, embedded = false }) => {
   const content = (
     <>
@@ -1723,6 +2057,88 @@ const TextPanel = ({ item, onChange, embedded = false }) => {
           <option value="bottom-center">Bottom center</option>
           <option value="top-left">Top left</option>
         </select>
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-3">
+        <p className="mb-3 text-xs font-medium uppercase tracking-wider text-white/35">
+          Style
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {TEXT_STYLE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() =>
+                onChange({
+                  styleVariant: preset.id,
+                  fontSize: preset.id === "headline" ? 86 : item.fontSize || 48,
+                })
+              }
+              className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
+                (item.styleVariant || "lower-third") === preset.id
+                  ? "border-white/30 bg-white/12 text-white"
+                  : "border-white/10 bg-white/[0.03] text-white/50 hover:bg-white/[0.06]"
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <NumberField
+            label="Size"
+            value={item.fontSize || (item.styleVariant === "headline" ? 86 : 48)}
+            onChange={(fontSize) =>
+              onChange({ fontSize: clampNumber(fontSize, 24, 132) })
+            }
+          />
+          <label className="block">
+            <span className="mb-1 block text-xs text-white/40">Motion</span>
+            <select
+              className={fieldClass}
+              value={item.transition?.type || "slide-up"}
+              onChange={(e) =>
+                onChange({
+                  transition: {
+                    ...(item.transition || {}),
+                    type: e.target.value,
+                    duration: item.transition?.duration || 0.35,
+                  },
+                })
+              }
+            >
+              <option value="none">None</option>
+              <option value="fade">Fade</option>
+              <option value="slide-up">Slide up</option>
+              <option value="zoom">Zoom</option>
+            </select>
+          </label>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <ColorField
+            label="Text"
+            value={item.textColor}
+            fallback="#ffffff"
+            onChange={(textColor) => onChange({ textColor })}
+          />
+          <ColorField
+            label="Kicker"
+            value={item.kickerColor}
+            fallback="#d8b4fe"
+            onChange={(kickerColor) => onChange({ kickerColor })}
+          />
+          <ColorField
+            label="Accent"
+            value={item.accentColor}
+            fallback="#c084fc"
+            onChange={(accentColor) => onChange({ accentColor })}
+          />
+          <ColorField
+            label="Panel"
+            value={item.backgroundColor}
+            fallback="#101216"
+            onChange={(backgroundColor) => onChange({ backgroundColor })}
+          />
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>

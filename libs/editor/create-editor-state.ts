@@ -22,6 +22,7 @@ export function createEditorState({
   clipDurations,
   editPlan,
   voiceoverUrl,
+  presenterVideoUrl,
   musicUrl,
   generationOptions,
   appBaseUrl,
@@ -32,6 +33,7 @@ export function createEditorState({
   clipDurations: number[];
   editPlan: EditPlan;
   voiceoverUrl?: string | null;
+  presenterVideoUrl?: string | null;
   musicUrl?: string | null;
   generationOptions?: any;
   appBaseUrl?: string;
@@ -40,6 +42,7 @@ export function createEditorState({
 }): EditorState {
   const starts = getClipStarts(clipDurations, DEFAULT_TRANSITION_SECONDS);
   const duration = effectiveDuration(clipDurations, DEFAULT_TRANSITION_SECONDS);
+  const dimensions = resolveEditorDimensions(generationOptions);
   const videoItems: EditorItem[] = clips.map((clip, index) => ({
     id: `clip-${index}`,
     kind: "video",
@@ -48,6 +51,7 @@ export function createEditorState({
     start: starts[index] || 0,
     duration: clipDurations[index] || 5,
     trimStart: 0,
+    fit: "contain",
     trackIndex: index % 2,
     transition:
       index < clips.length - 1
@@ -55,16 +59,23 @@ export function createEditorState({
         : undefined,
   }));
 
-  const textItems: EditorItem[] = (editPlan.supportText || []).map((item) => ({
+  const textItems: EditorItem[] = (editPlan.supportText || []).map((item, index) => ({
     id: `text-${item.clipIndex}`,
     kind: "text",
     clipIndex: item.clipIndex,
     text: item.headline,
     kicker: item.kicker || "",
+    styleVariant: index === 0 ? "lower-third" : index % 2 === 0 ? "signal" : "glass-card",
+    fontSize: index === 0 ? 50 : 44,
+    textColor: "#ffffff",
+    kickerColor: "#d8b4fe",
+    accentColor: "#c084fc",
+    backgroundColor: "rgba(10,12,16,.62)",
     position: item.position || "bottom-left",
     start: (starts[item.clipIndex] || 0) + 0.45,
     duration: Math.min(3.1, Math.max(1.8, (clipDurations[item.clipIndex] || 5) - 1)),
     trackIndex: 20 + item.clipIndex,
+    transition: { type: "slide-up", duration: 0.35 },
   }));
 
   const voiceoverItems: EditorItem[] = [];
@@ -94,19 +105,19 @@ export function createEditorState({
 
   const overlayItems: EditorItem[] = [];
   if (generationOptions?.presenter?.enabled) {
-    const presenterUrl = resolvePresenterUrl(
-      generationOptions.presenter.presenterId,
-      appBaseUrl
-    );
+    const presenterUrl =
+      presenterVideoUrl ||
+      resolvePresenterUrl(generationOptions.presenter.presenterId, appBaseUrl);
     overlayItems.push({
       id: "presenter-bubble",
       kind: "bubble",
       sourceUrl: presenterUrl,
-      start: 0.75,
-      duration: Math.max(0.1, duration - 1.5),
+      start: voiceoverUrl ? 0 : 0.75,
+      duration: voiceoverUrl ? duration : Math.max(0.1, duration - 1.5),
+      trimStart: 0,
       trackIndex: 35,
-      x: 1260,
-      y: 610,
+      x: dimensions.width > dimensions.height ? 1260 : 560,
+      y: dimensions.width > dimensions.height ? 610 : 1360,
       width: 360,
       height: 360,
       shape: "circle",
@@ -115,8 +126,8 @@ export function createEditorState({
 
   return {
     version: EDITOR_VERSION,
-    width: EDITOR_WIDTH,
-    height: EDITOR_HEIGHT,
+    width: dimensions.width,
+    height: dimensions.height,
     fps: 30,
     duration,
     transitionSeconds: DEFAULT_TRANSITION_SECONDS,
@@ -134,11 +145,24 @@ export function createEditorState({
     },
     artifacts: {
       ...(voiceoverUrl ? { voiceoverUrl } : {}),
+      ...(presenterVideoUrl ? { presenterVideoUrl } : {}),
       ...(musicUrl ? { musicUrl } : {}),
     },
     editPlan,
+    visualEffects: {
+      grain: true,
+      lightLeak: true,
+    },
     ...(generationOptions ? { generationOptions } : {}),
   } as EditorState;
+}
+
+function resolveEditorDimensions(generationOptions?: any) {
+  const aspectRatio = generationOptions?.format?.aspectRatio;
+  if (aspectRatio === "9:16") {
+    return { width: EDITOR_HEIGHT, height: EDITOR_WIDTH };
+  }
+  return { width: EDITOR_WIDTH, height: EDITOR_HEIGHT };
 }
 
 function resolvePresenterUrl(presenterId?: string, appBaseUrl?: string) {

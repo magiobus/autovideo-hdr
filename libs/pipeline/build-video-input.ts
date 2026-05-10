@@ -28,6 +28,7 @@ export function buildVideoInput(opts: {
         prompt,
         start_image_url: imageUrl,
         duration: String(duration),
+        aspect_ratio: aspectRatio,
         negative_prompt:
           opts.negativePrompt || "blur, distort, and low quality",
         cfg_scale: 0.5,

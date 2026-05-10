@@ -86,7 +86,10 @@ export async function generateVideos(projectId: string): Promise<string> {
         imageUrl: videoSourceUrl,
         prompt: clip.customVideoPrompt || shot.videoPrompt || "",
         duration: clip.customDuration || shot.duration || 5,
-        aspectRatio: (style as any).aspectRatio || "16:9",
+        aspectRatio:
+          project.generationOptions?.format?.aspectRatio ||
+          (style as any).aspectRatio ||
+          "16:9",
       });
 
       console.log(`[videogen] clip ${i}: submitting to ${endpoint}`);

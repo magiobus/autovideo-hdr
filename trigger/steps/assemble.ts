@@ -6,13 +6,17 @@ import os from "os";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { connectDB, getModels, getOpenAI, getR2Client, configureFal, fal } from "../helpers";
 import { createEditorState } from "@/libs/editor/create-editor-state";
+import { generatePresenterAvatarVideo } from "./presenter-avatar";
 
 const execFileAsync = promisify(execFile);
-const VIDEO_WIDTH = 1920;
-const VIDEO_HEIGHT = 1080;
+const LANDSCAPE_WIDTH = 1920;
+const LANDSCAPE_HEIGHT = 1080;
 const FPS = 30;
 const TRANSITION_SECONDS = 0.45;
 const MIN_TRANSITION_CLIP_SECONDS = TRANSITION_SECONDS + 0.1;
+const AVATAR_GENERATION_TIMEOUT_MS = Number(
+  process.env.AVATAR_GENERATION_TIMEOUT_MS || 600_000
+);
 
 type EditPlan = {
   voiceover: string;
@@ -39,6 +43,7 @@ export async function assemble(projectId: string): Promise<string> {
   const style = await Style.findById(project.style).lean();
   const styleData = style as any;
   const generationOptions = project.generationOptions || {};
+  const renderDimensions = resolveRenderDimensions(generationOptions);
 
   project.status = "assembling";
   project.progress = 88;
@@ -92,7 +97,7 @@ export async function assemble(projectId: string): Promise<string> {
         "-t",
         String(plannedDurations[i]),
         "-vf",
-        `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase,crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT},setsar=1,eq=contrast=1.035:saturation=1.04`,
+        `scale=${renderDimensions.width}:${renderDimensions.height}:force_original_aspect_ratio=increase,crop=${renderDimensions.width}:${renderDimensions.height},setsar=1,eq=contrast=1.035:saturation=1.04`,
         "-c:v",
         "libx264",
         "-preset",
@@ -163,7 +168,10 @@ export async function assemble(projectId: string): Promise<string> {
 
     if (voiceoverEnabled) {
       console.log(`[assemble] generating voiceover…`);
-      const script = tightenVoiceover(editPlan.voiceover);
+      const script = cleanVoiceover(
+        editPlan.voiceover,
+        voiceoverWordLimit(project, renderedDuration)
+      );
       console.log(`[assemble] voiceover script: "${script.substring(0, 120)}…"`);
 
       // ── Gemini TTS via Fal ──
@@ -204,6 +212,27 @@ export async function assemble(projectId: string): Promise<string> {
         keyName: "voiceover.mp3",
         contentType: "audio/mpeg",
       });
+    }
+
+    let presenterVideoUrl: string | null = null;
+    if (voiceoverUrl && generationOptions?.presenter?.enabled) {
+      try {
+        presenterVideoUrl = await withTimeout(
+          generatePresenterAvatarVideo({
+            projectId,
+            tmpDir,
+            audioUrl: voiceoverUrl,
+            presenterId: generationOptions.presenter.presenterId,
+            duration: renderedDuration,
+          }),
+          AVATAR_GENERATION_TIMEOUT_MS,
+          "Talking avatar generation timed out"
+        );
+      } catch (err: any) {
+        console.log(
+          `[assemble] talking avatar generation failed, using static presenter: ${err.message}`
+        );
+      }
     }
 
     // ── 5. Music asset ──
@@ -270,6 +299,7 @@ export async function assemble(projectId: string): Promise<string> {
       clipDurations,
       editPlan,
       voiceoverUrl,
+      presenterVideoUrl,
       musicUrl: musicAssetUrl,
       generationOptions,
       appBaseUrl: getAppBaseUrl(),
@@ -333,6 +363,14 @@ async function uploadFileToR2({
   return `${process.env.R2_PUBLIC_URL!.replace(/\/$/, "")}/${key}`;
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timeout: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout));
+}
+
 function getAppBaseUrl() {
   return (
     process.env.NEXT_PUBLIC_APP_URL ||
@@ -340,6 +378,13 @@ function getAppBaseUrl() {
     process.env.NEXTAUTH_URL ||
     ""
   );
+}
+
+function resolveRenderDimensions(generationOptions?: any) {
+  if (generationOptions?.format?.aspectRatio === "9:16") {
+    return { width: LANDSCAPE_HEIGHT, height: LANDSCAPE_WIDTH };
+  }
+  return { width: LANDSCAPE_WIDTH, height: LANDSCAPE_HEIGHT };
 }
 
 async function probeDuration(filePath: string) {
@@ -377,24 +422,33 @@ function isGenerationOptionEnabled(option: any, fallback: boolean) {
 function buildVoiceStyleInstructions(voiceOptions: any) {
   const gender = voiceOptions?.gender === "female" ? "female" : "male";
   const preset = String(voiceOptions?.voicePresetId || "");
-  const tone = preset.includes("editorial")
+  const casual = preset.includes("casual");
+  const tone = casual
+    ? "friendly, relaxed, and conversational"
+    : preset.includes("editorial")
     ? "editorial, composed, and refined"
     : "warm, cinematic, and architectural";
 
   return [
-    `Use a premium ${gender} narrator voice.`,
+    `Use a ${casual ? "natural" : "premium"} ${gender} narrator voice.`,
     `The delivery should be ${tone}.`,
-    "Speak like a premium architectural film narrator.",
-    "Warm, intimate, understated, and slow.",
-    "Leave clean pauses between sentence fragments.",
+    casual
+      ? "Speak like a smart friend walking someone through a home, not like a luxury ad."
+      : "Speak like a calm architectural documentary narrator.",
+    casual
+      ? "Keep it human, clear, lightly upbeat, and not too slow."
+      : "Natural, intimate, understated, and slow.",
+    "Leave clean pauses between short spoken lines.",
     "No realtor energy, no YouTube host energy, no corporate explainer tone.",
-    "The voice should feel expensive, quiet, and human.",
+    "The voice should feel human and observant, not theatrical.",
   ].join(" ");
 }
 
 function getGeminiVoicePreset(voiceOptions: any) {
   const preset = String(voiceOptions?.voicePresetId || "");
+  if (preset === "male-casual") return "Puck";
   if (preset === "male-editorial") return "Fenrir";
+  if (preset === "female-casual") return "Callirrhoe";
   if (preset === "female-architect") return "Aoede";
   if (preset === "female-editorial") return "Zephyr";
   return "Charon";
@@ -513,31 +567,38 @@ async function createEditPlan({
 
   try {
     const openai = getOpenAI();
-    const maxWords = Math.max(18, Math.floor(totalDuration * 0.75));
+    const ownerNotes = compactNarrationNote(project.propertyInfo?.narrationNotes);
+    const hasOwnerNotes = ownerNotes.length > 0;
+    const maxWords = voiceoverWordLimit(project, totalDuration);
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: `You are the creative director for a top-tier real estate video edit. Write sparse, cinematic copy in the style of premium architectural reels from elite real estate videographers. No realtor-on-camera ideas. No brochure language. No "welcome to". No long sentences.
+          content: `You write short spoken narration for social videos. The copy must sound like a real person talking over the footage, not a listing brochure, not generic luxury poetry, and not a brand manifesto.
 
 Return JSON only:
 {
-  "voiceover": "short poetic narration, max ${maxWords} words",
+  "voiceover": "spoken narration, max ${maxWords} words",
   "supportText": [
-    { "clipIndex": 0, "headline": "A quieter kind of luxury", "kicker": "Park City", "position": "bottom-left" }
+    { "clipIndex": 0, "headline": "Warm Timber Entry", "kicker": "Park City", "position": "bottom-left" }
   ]
 }
 
 Rules:
-- Voiceover should feel optional and restrained; silence should carry the edit.
-- Voiceover should be 18-36 words total unless the owner notes demand one concrete detail.
-- Use fragments, not full sales sentences.
-- Support text should be 2 to 5 words, editorial, not descriptive labels like "Kitchen".
+- Owner notes are hard requirements, not optional style guidance.
+- If owner notes are provided, make them the primary content of the voiceover. Reuse the requested topics and plain nouns directly when natural.
+- Do not translate casual notes into upscale real-estate language. If notes say hackathon, community, snacks, founders, families, remote work, etc., say those ideas plainly.
+- It is okay if the requested content is not about real estate. Do not force every script into a home-tour or luxury framing.
+- Use 2-5 short spoken lines. Natural cadence. Contractions are good. No rhyming. No grand abstractions.
+- Start with the user-requested idea when owner notes are present; otherwise start with a grounded visual observation.
+- Use visible home details only when they support the requested talking points.
+- Support text should be 2 to 5 words, concrete/editorial, not room labels like "Kitchen".
 - Use real details only from owner notes, detected photo features, address, price, and shot names.
 - Add support text to 4-6 clips max: opening, living/kitchen, detail, outdoor, closing.
-- Avoid hype words like stunning, beautiful, amazing, dream home.`,
+- Never say: welcome, stunning, beautiful, amazing, dream home, quiet luxury, designed to be felt, light and texture, private showings available, one of a kind, exceptional, elevated living.
+- Do not mention price unless it is explicitly provided and useful as closing text.`,
         },
         {
           role: "user",
@@ -545,7 +606,9 @@ Rules:
 Address: ${project.propertyInfo?.address || "(not provided)"}
 Price: ${project.propertyInfo?.price || "(not provided)"}
 Description: ${project.propertyInfo?.description || "(not provided)"}
-Owner notes: ${project.propertyInfo?.narrationNotes || "(none)"}
+Required talking points from user: ${ownerNotes || "(none)"}
+
+If required talking points are present, the voiceover must clearly say those ideas. Do not replace them with generic luxury language.
 
 Detected visual features:
 ${(project.sourceImages || []).filter((img: any) => img.features).map((img: any) => `- ${img.features}`).join("\n") || "(none)"}
@@ -558,22 +621,53 @@ ${completedClips.map((clip, i) => {
 
 Total duration: ${Math.round(totalDuration)} seconds.`,
         },
+        {
+          role: "user",
+          content: hasOwnerNotes
+            ? `When user notes exist, good voiceover shape:
+Line 1: say the user's main point plainly.
+Line 2: connect it to one visible detail or use case.
+Line 3: add another requested detail in normal spoken language.
+Line 4: optional closing, only if it sounds like a person talking.
+
+Bad voiceover for notes like "mention hackathon, community, and snacks":
+"An elevated setting for collaboration, with thoughtful spaces and refined energy."
+
+Good voiceover:
+"This is the kind of place that actually works for a hackathon. There is room for people to spread out, enough space to build together, and yes, snacks close by all day."`
+            : `Good voiceover shape:
+Line 1: what we are seeing now.
+Line 2: one concrete material, room, or design choice.
+Line 3: how the home feels to move through.
+Line 4: optional closing, only if it adds something specific.
+
+Bad voiceover:
+"A quieter kind of luxury. Light, texture, and quiet intention. A slower rhythm."
+
+Good voiceover:
+"The entry starts in warm timber and soft daylight. Inside, clean white rooms keep the focus on proportion, storage, and calm. Every space feels simple enough to live in, and considered enough to remember."`,
+        },
       ],
       max_tokens: 900,
     });
 
     const parsed = JSON.parse(response.choices[0].message.content || "{}");
-    return normalizeEditPlan(parsed, fallback, completedClips.length);
+    return normalizeEditPlan(parsed, fallback, completedClips.length, maxWords);
   } catch (err: any) {
     console.log(`[assemble] edit plan failed, using fallback: ${err.message}`);
     return fallback;
   }
 }
 
-function normalizeEditPlan(input: any, fallback: EditPlan, clipCount: number): EditPlan {
+function normalizeEditPlan(
+  input: any,
+  fallback: EditPlan,
+  clipCount: number,
+  maxVoiceoverWords: number
+): EditPlan {
   const voiceover =
     typeof input?.voiceover === "string" && input.voiceover.trim()
-      ? tightenVoiceover(input.voiceover)
+      ? cleanVoiceover(input.voiceover, maxVoiceoverWords)
       : fallback.voiceover;
   const seen = new Set<number>();
   const supportText = Array.isArray(input?.supportText)
@@ -608,19 +702,38 @@ function normalizeEditPlan(input: any, fallback: EditPlan, clipCount: number): E
   };
 }
 
-function tightenVoiceover(script: string) {
-  return script
+function cleanVoiceover(script: string, maxWords = 58) {
+  const cleaned = script
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
     .replace(/\s+/g, " ")
     .replace(/^["']|["']$/g, "")
-    .trim()
-    .split(" ")
-    .slice(0, 42)
-    .join(" ");
+    .trim();
+  if (!cleaned) return "";
+  const words = cleaned.split(" ");
+  if (words.length <= maxWords) return cleaned;
+  return words.slice(0, maxWords).join(" ").replace(/[,:;–-]\s*$/, "").trim();
+}
+
+function voiceoverWordLimit(project: any, durationSeconds: number) {
+  const hasNotes = compactNarrationNote(project.propertyInfo?.narrationNotes).length > 0;
+  const wordsPerSecond = hasNotes ? 1.65 : 1.05;
+  const minWords = hasNotes ? 28 : 24;
+  const maxWords = hasNotes ? 86 : 58;
+  return Math.max(minWords, Math.min(maxWords, Math.floor(durationSeconds * wordsPerSecond)));
+}
+
+function tightenVoiceover(script: string) {
+  return cleanVoiceover(script, 58);
 }
 
 function buildFallbackEditPlan(project: any, completedClips: any[], shots: any[]): EditPlan {
   const address = project.propertyInfo?.address || "";
   const price = project.propertyInfo?.price || "";
+  const location = shortLocation(address);
+  const notes = compactNarrationNote(project.propertyInfo?.narrationNotes);
+  const feature = firstUsefulFeature(project);
+  const shotDetail = firstUsefulShotName(completedClips, shots);
   const supportText = completedClips
     .map((clip, i) => {
       const shot = shots[clip.shotIndex];
@@ -628,24 +741,24 @@ function buildFallbackEditPlan(project: any, completedClips: any[], shots: any[]
       if (i === 0) {
         return {
           clipIndex: i,
-          headline: address ? "A quieter kind of luxury" : "Designed to be felt",
+          headline: notes || address ? firstSupportHeadline(notes, address) : "Easy to live in",
           kicker: address,
           position: "bottom-left" as const,
         };
       }
       if (/kitchen/i.test(name)) {
-        return { clipIndex: i, headline: "Stone. Light. Precision.", position: "bottom-left" as const };
+        return { clipIndex: i, headline: "Kitchen rhythm", position: "bottom-left" as const };
       }
       if (/detail|bath/i.test(name)) {
-        return { clipIndex: i, headline: "Details that hold", position: "bottom-left" as const };
+        return { clipIndex: i, headline: "Useful details", position: "bottom-left" as const };
       }
       if (/outdoor|pool|patio/i.test(name)) {
-        return { clipIndex: i, headline: "Built around the view", position: "bottom-left" as const };
+        return { clipIndex: i, headline: "Room outside", position: "bottom-left" as const };
       }
       if (i === completedClips.length - 1) {
         return {
           clipIndex: i,
-          headline: price || "Private showings available",
+          headline: price || "Worth a closer look",
           position: "bottom-left" as const,
         };
       }
@@ -654,10 +767,80 @@ function buildFallbackEditPlan(project: any, completedClips: any[], shots: any[]
     .filter(Boolean) as EditPlan["supportText"];
 
   return {
-    voiceover:
-      "Not every home asks for attention. Some just hold it. Light, texture, and quiet intention. A slower kind of luxury.",
+    voiceover: buildFallbackVoiceover({ location, notes, feature, shotDetail }),
     supportText,
   };
+}
+
+function buildFallbackVoiceover({
+  location,
+  notes,
+  feature,
+  shotDetail,
+}: {
+  location: string;
+  notes: string;
+  feature: string;
+  shotDetail: string;
+}) {
+  if (notes) return cleanVoiceover(notes, 86);
+
+  const opener = location
+    ? `${location} sets the tone without forcing it.`
+    : "The first read is calm and practical.";
+  const detail = feature
+    ? `What stands out is ${feature}.`
+    : shotDetail
+      ? `The edit moves through ${shotDetail.toLowerCase()}.`
+      : "The rooms keep the focus on proportion, storage, and daily use.";
+  return cleanVoiceover(
+    `${opener} ${detail} It feels easy to understand, easy to move through, and practical enough for real life.`,
+    58
+  );
+}
+
+function firstSupportHeadline(notes: string, address: string) {
+  const source = notes || address;
+  const words = source
+    .replace(/[^\w\s-]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2)
+    .slice(0, 4);
+  return words.length ? words.join(" ") : "Easy to live in";
+}
+
+function shortLocation(address: string) {
+  const parts = String(address || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 2] : parts[0] || "";
+}
+
+function compactNarrationNote(value: string) {
+  const note = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!note || note.length < 20) return "";
+  return note.slice(0, 520).trim();
+}
+
+function firstUsefulFeature(project: any) {
+  const features = (project.sourceImages || [])
+    .map((img: any) => String(img.features || "").trim())
+    .filter(Boolean)
+    .join(", ");
+  const match = features.match(
+    /(warm wood|timber|marble|stone|fireplace|deck|patio|pool|natural light|vaulted|built-in|storage|pantry|view|garden|terrace|black tile|white oak|brass|concrete|skylight)[^,.]*/i
+  );
+  return match ? match[0].toLowerCase() : "";
+}
+
+function firstUsefulShotName(completedClips: any[], shots: any[]) {
+  const shot = completedClips
+    .map((clip) => shots[clip.shotIndex]?.name)
+    .find((name) => name && !/hero|opening|closing/i.test(name));
+  return shot || "";
 }
 
 async function renderEditedTimeline({
@@ -850,7 +1033,7 @@ ${overlay}`;
   </style>
 </head>
 <body>
-<div data-composition-id="autohdr-video-studio" data-start="0" data-width="${VIDEO_WIDTH}" data-height="${VIDEO_HEIGHT}">
+<div data-composition-id="autohdr-video-studio" data-start="0" data-width="${LANDSCAPE_WIDTH}" data-height="${LANDSCAPE_HEIGHT}">
 ${body}
 </div>
 </body>

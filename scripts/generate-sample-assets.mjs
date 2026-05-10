@@ -20,17 +20,17 @@ const presenterPrompts = [
   {
     id: "male-1",
     prompt:
-      "Professional male luxury real estate presenter headshot, early 40s, calm approachable expression, dark blazer over black knit, soft studio lighting, neutral warm background, photorealistic editorial portrait, centered, shoulders visible, no text, no logo",
+      "Jake-style professional male real estate presenter headshot, calm approachable expression, dark blazer, soft studio lighting, neutral warm background, photorealistic editorial portrait, centered, shoulders visible, no text, no logo",
   },
   {
     id: "male-2",
     prompt:
-      "Professional male editorial real estate host headshot, mid 30s, confident quiet expression, charcoal suit, soft cinematic studio light, dark neutral background, photorealistic portrait, centered composition, no text, no logo",
+      "Eddy-style professional male editorial real estate host headshot, confident quiet expression, charcoal suit, soft cinematic studio light, slightly tighter crop, neutral background, photorealistic portrait, centered composition, no text, no logo",
   },
   {
     id: "male-3",
     prompt:
-      "Professional male luxury property advisor headshot, late 30s, warm expression, navy jacket, premium studio portrait, soft key light, subtle background depth, photorealistic, centered, no text, no logo",
+      "Matt-style professional male luxury property advisor headshot, warm expression, navy jacket, premium studio portrait, soft key light, subtle background depth, photorealistic, centered, no text, no logo",
   },
   {
     id: "female-1",
@@ -65,6 +65,14 @@ const voiceSamples = [
       "Premium male editorial narrator. Calm, confident, refined, quiet, slow, human. No YouTube host energy and no corporate explainer tone.",
   },
   {
+    id: "male-casual",
+    voice: "Puck",
+    prompt:
+      "This place has an easy rhythm. Bright rooms, clean finishes, and space that feels simple to settle into.",
+    style:
+      "Natural male narrator. Friendly, relaxed, conversational, lightly upbeat, clear, human. No announcer voice, no luxury ad voice, no realtor energy.",
+  },
+  {
     id: "female-architect",
     voice: "Aoede",
     prompt: "A slower rhythm. A brighter frame. A home designed to be felt.",
@@ -77,6 +85,14 @@ const voiceSamples = [
     prompt: "Stone, light, and proportion. Every detail lands quietly.",
     style:
       "Premium female editorial narrator. Soft, refined, understated, slow, expensive, quiet, human. No realtor energy.",
+  },
+  {
+    id: "female-casual",
+    voice: "Callirrhoe",
+    prompt:
+      "It feels bright right away. Simple spaces, thoughtful details, and a layout that makes everyday life feel easy.",
+    style:
+      "Natural female narrator. Friendly, relaxed, conversational, easy-going, clear, human. No announcer voice, no luxury ad voice, no realtor energy.",
   },
 ];
 

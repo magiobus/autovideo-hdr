@@ -3,6 +3,7 @@ import { auth } from "@/libs/auth";
 import connectDB from "@/libs/mongoose";
 import Project from "@/models/Project";
 import { tasks } from "@trigger.dev/sdk";
+import { renderVideoProject } from "@/trigger/video-render";
 
 export async function POST(request, { params }) {
   const session = await auth();
@@ -31,9 +32,15 @@ export async function POST(request, { params }) {
   project.markModified("editorState");
   await project.save();
 
-  await tasks.trigger("video-render", {
-    projectId: project._id.toString(),
-  });
+  try {
+    await tasks.trigger("video-render", {
+      projectId: project._id.toString(),
+    });
 
-  return NextResponse.json({ status: "rendering" });
+    return NextResponse.json({ status: "rendering" });
+  } catch (err) {
+    console.error("[render] Trigger failed, rendering inline", err);
+    const result = await renderVideoProject(project._id.toString());
+    return NextResponse.json({ status: "rendered", ...result });
+  }
 }
