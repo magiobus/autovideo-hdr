@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
@@ -6,7 +6,7 @@ import os from "os";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { connectDB, getModels, getOpenAI, getR2Client, configureFal, fal } from "../helpers";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export async function assemble(projectId: string): Promise<string> {
   await connectDB();
@@ -14,6 +14,11 @@ export async function assemble(projectId: string): Promise<string> {
 
   const project = await Project.findById(projectId);
   if (!project) throw new Error(`Project ${projectId} not found`);
+
+  if (project.status === "completed" && project.finalVideoUrl) {
+    console.log(`[assemble] already completed, skipping`);
+    return projectId;
+  }
 
   const style = await Style.findById(project.style).lean();
   const styleData = style as any;
@@ -31,6 +36,11 @@ export async function assemble(projectId: string): Promise<string> {
     await project.save();
     throw new Error("No completed clips to assemble");
   }
+  if (completedClips.length !== project.clips.length) {
+    project.status = "failed";
+    await project.save();
+    throw new Error(`Only ${completedClips.length}/${project.clips.length} clips completed`);
+  }
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "autovideo-"));
   console.log(`[assemble] tmpDir: ${tmpDir}, clips: ${completedClips.length}`);
@@ -42,6 +52,7 @@ export async function assemble(projectId: string): Promise<string> {
     for (let i = 0; i < completedClips.length; i++) {
       const clipPath = path.join(tmpDir, `clip-${i}.mp4`);
       const res = await fetch(completedClips[i].videoUrl);
+      if (!res.ok) throw new Error(`Failed to download clip ${i}: ${res.status}`);
       await fs.writeFile(clipPath, Buffer.from(await res.arrayBuffer()));
       clipPaths.push(clipPath);
     }
@@ -51,9 +62,25 @@ export async function assemble(projectId: string): Promise<string> {
     const normalizedPaths: string[] = [];
     for (let i = 0; i < clipPaths.length; i++) {
       const normalized = path.join(tmpDir, `normalized-${i}.mp4`);
-      await execAsync(
-        `ffmpeg -y -i "${clipPaths[i]}" -c:v libx264 -preset fast -crf 23 -r 30 -s 1920x1080 -pix_fmt yuv420p -an "${normalized}"`
-      );
+      await ffmpeg([
+        "-y",
+        "-i",
+        clipPaths[i],
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "23",
+        "-r",
+        "30",
+        "-s",
+        "1920x1080",
+        "-pix_fmt",
+        "yuv420p",
+        "-an",
+        normalized,
+      ]);
       normalizedPaths.push(normalized);
     }
 
@@ -64,9 +91,7 @@ export async function assemble(projectId: string): Promise<string> {
       normalizedPaths.map((p) => `file '${p}'`).join("\n")
     );
     const concatOutput = path.join(tmpDir, "concat.mp4");
-    await execAsync(
-      `ffmpeg -y -f concat -safe 0 -i "${concatList}" -c copy "${concatOutput}"`
-    );
+    await ffmpeg(["-y", "-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", concatOutput]);
     console.log(`[assemble] concatenated`);
 
     const shots = styleData?.shots || [];
@@ -87,15 +112,15 @@ export async function assemble(projectId: string): Promise<string> {
       let timeOffset = 0;
       const drawFilters: string[] = [];
 
-      for (const clip of completedClips) {
+      for (const [clipIndex, clip] of completedClips.entries()) {
         const shot = shots[clip.shotIndex];
         if (shot?.textOverlay?.text) {
-          let text = shot.textOverlay.text
+          const text = shot.textOverlay.text
             .replace("{{address}}", project.propertyInfo.address || "")
             .replace("{{price}}", project.propertyInfo.price || "")
-            .replace("{{description}}", project.propertyInfo.description || "")
-            .replace(/'/g, "'\\''")
-            .replace(/:/g, "\\:");
+            .replace("{{description}}", project.propertyInfo.description || "");
+          const textFile = path.join(tmpDir, `overlay-${clipIndex}.txt`);
+          await fs.writeFile(textFile, text, "utf8");
 
           const overlayStart = timeOffset + (shot.textOverlay.startAt || 0);
           const overlayEnd = overlayStart + (shot.textOverlay.duration || 3);
@@ -110,7 +135,7 @@ export async function assemble(projectId: string): Promise<string> {
           else if (pos === "top-center") y = "60";
 
           drawFilters.push(
-            `drawtext=text='${text}':fontsize=52:fontcolor=white:` +
+            `drawtext=textfile=${escapeFilterValue(textFile)}:fontsize=52:fontcolor=white:` +
               `box=1:boxcolor=black@0.4:boxborderw=20:` +
               `x=${x}:y=${y}:` +
               `enable='between(t,${overlayStart},${overlayEnd})':` +
@@ -122,9 +147,20 @@ export async function assemble(projectId: string): Promise<string> {
 
       if (drawFilters.length > 0) {
         const withText = path.join(tmpDir, "with-text.mp4");
-        await execAsync(
-          `ffmpeg -y -i "${videoPath}" -vf "${drawFilters.join(",")}" -c:v libx264 -preset fast -crf 23 "${withText}"`
-        );
+        await ffmpeg([
+          "-y",
+          "-i",
+          videoPath,
+          "-vf",
+          drawFilters.join(","),
+          "-c:v",
+          "libx264",
+          "-preset",
+          "fast",
+          "-crf",
+          "23",
+          withText,
+        ]);
         videoPath = withText;
         console.log(`[assemble] text overlays added`);
       }
@@ -208,23 +244,65 @@ Rules:
 
     if (voiceoverPath && musicPath) {
       finalPath = path.join(tmpDir, "final.mp4");
-      await execAsync(
-        `ffmpeg -y -i "${videoPath}" -i "${voiceoverPath}" -i "${musicPath}" ` +
-          `-filter_complex "[2:a]volume=0.15[bg];[1:a][bg]amix=inputs=2:duration=first[a]" ` +
-          `-map 0:v -map "[a]" -c:v copy -c:a aac -shortest "${finalPath}"`
-      );
+      await ffmpeg([
+        "-y",
+        "-i",
+        videoPath,
+        "-i",
+        voiceoverPath,
+        "-i",
+        musicPath,
+        "-filter_complex",
+        "[2:a]volume=0.15[bg];[1:a][bg]amix=inputs=2:duration=first[a]",
+        "-map",
+        "0:v",
+        "-map",
+        "[a]",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-shortest",
+        finalPath,
+      ]);
     } else if (voiceoverPath) {
       finalPath = path.join(tmpDir, "final.mp4");
-      await execAsync(
-        `ffmpeg -y -i "${videoPath}" -i "${voiceoverPath}" ` +
-          `-map 0:v -map 1:a -c:v copy -c:a aac -shortest "${finalPath}"`
-      );
+      await ffmpeg([
+        "-y",
+        "-i",
+        videoPath,
+        "-i",
+        voiceoverPath,
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-shortest",
+        finalPath,
+      ]);
     } else if (musicPath) {
       finalPath = path.join(tmpDir, "final.mp4");
-      await execAsync(
-        `ffmpeg -y -i "${videoPath}" -i "${musicPath}" ` +
-          `-map 0:v -map 1:a -c:v copy -c:a aac -shortest "${finalPath}"`
-      );
+      await ffmpeg([
+        "-y",
+        "-i",
+        videoPath,
+        "-i",
+        musicPath,
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-shortest",
+        finalPath,
+      ]);
     }
 
     console.log(`[assemble] audio done`);
@@ -262,4 +340,12 @@ Rules:
     await project.save();
     throw err;
   }
+}
+
+async function ffmpeg(args: string[]) {
+  await execFileAsync("ffmpeg", args, { maxBuffer: 1024 * 1024 * 20 });
+}
+
+function escapeFilterValue(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:");
 }

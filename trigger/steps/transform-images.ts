@@ -37,7 +37,7 @@ export async function transformImages(projectId: string): Promise<string> {
       project.clips[i].imageJob = { status: "completed" };
       project.clips[i].transformPasses = [];
       console.log(`[transform] clip ${i}: no transforms, skipping`);
-    } else {
+    } else if (!Array.isArray(project.clips[i].transformPasses)) {
       project.clips[i].transformPasses = [];
     }
   }
@@ -50,9 +50,7 @@ export async function transformImages(projectId: string): Promise<string> {
     return projectId;
   }
 
-  // Count total passes for progress tracking
   const totalPasses = clipTransforms.reduce((sum, ct) => sum + ct.passes.length, 0);
-  let completedPasses = 0;
 
   console.log(`[transform] ${project.clips.length} clips, max ${maxPasses} passes, ${totalPasses} total jobs`);
 
@@ -68,7 +66,23 @@ export async function transformImages(projectId: string): Promise<string> {
 
       // Skip if a previous pass failed
       if (clip.imageJob?.status === "failed") {
-        completedPasses++;
+        continue;
+      }
+
+      const existingPass = clip.transformPasses[passIndex];
+      if (existingPass?.job?.status === "completed" && existingPass.outputR2Key) {
+        if (passIndex === ct.passes.length - 1 && !clip.transformedImageUrl) {
+          clip.transformedImageUrl = existingPass.outputImageUrl;
+          clip.imageJob = { status: "completed", completedAt: existingPass.job.completedAt || new Date() };
+        }
+        continue;
+      }
+      if (existingPass?.job?.status === "processing") {
+        hasJobs = true;
+        continue;
+      }
+      if (existingPass?.job?.status === "failed") {
+        clip.imageJob = { status: "failed", error: existingPass.job.error || `Pass ${passIndex} failed` };
         continue;
       }
 
@@ -131,7 +145,6 @@ export async function transformImages(projectId: string): Promise<string> {
       } catch (err: any) {
         console.log(`[transform] clip ${ct.clipIndex} pass ${passIndex} submit FAILED: ${err.message}`);
         clip.imageJob = { status: "failed", error: err.message };
-        completedPasses++;
       }
     }
 
@@ -178,7 +191,6 @@ export async function transformImages(projectId: string): Promise<string> {
             }
             passRecord.job.status = "completed";
             passRecord.job.completedAt = new Date();
-            completedPasses++;
 
             // If this is the final pass, set transformedImageUrl + backward compat key
             if (passIndex === ct.passes.length - 1 && passRecord.outputImageUrl) {
@@ -198,7 +210,6 @@ export async function transformImages(projectId: string): Promise<string> {
             passRecord.job.status = "failed";
             passRecord.job.error = "Fal transform job failed";
             clip.imageJob = { status: "failed", error: `Pass ${passIndex} failed` };
-            completedPasses++;
             console.log(`[transform] clip ${ct.clipIndex} pass ${passIndex} FAILED`);
           } else {
             console.log(`[transform] clip ${ct.clipIndex} pass ${passIndex} still ${jobStatus} (attempt ${attempt + 1})`);
@@ -208,10 +219,10 @@ export async function transformImages(projectId: string): Promise<string> {
           passRecord.job.status = "failed";
           passRecord.job.error = err.message;
           clip.imageJob = { status: "failed", error: err.message };
-          completedPasses++;
         }
       }
 
+      const completedPasses = countDonePasses(project.clips, clipTransforms);
       project.progress = 10 + Math.round((completedPasses / totalPasses) * 20);
       project.markModified("clips");
       await project.save();
@@ -220,6 +231,49 @@ export async function transformImages(projectId: string): Promise<string> {
     }
   }
 
+  let failedCount = 0;
+  for (const ct of clipTransforms) {
+    if (ct.passes.length === 0) continue;
+    const clip = project.clips[ct.clipIndex];
+    for (let passIndex = 0; passIndex < ct.passes.length; passIndex++) {
+      const passRecord = clip.transformPasses[passIndex];
+      if (passRecord?.job?.status === "processing") {
+        passRecord.job.status = "failed";
+        passRecord.job.error = "Timed out waiting for Fal transform job";
+        clip.imageJob = { status: "failed", error: `Pass ${passIndex} timed out` };
+      }
+    }
+    const finalPass = clip.transformPasses[ct.passes.length - 1];
+    if (finalPass?.job?.status !== "completed" || !finalPass.outputR2Key) {
+      failedCount++;
+      if (clip.imageJob?.status !== "failed") {
+        clip.imageJob = { status: "failed", error: "Image transform did not complete" };
+      }
+    }
+  }
+
+  project.progress = 10 + Math.round((countDonePasses(project.clips, clipTransforms) / totalPasses) * 20);
+  project.markModified("clips");
+  await project.save();
+
+  if (failedCount > 0) {
+    project.status = "failed";
+    await project.save();
+    throw new Error(`${failedCount} image transform clip(s) failed`);
+  }
+
   console.log(`[transform] all passes done`);
   return projectId;
+}
+
+function countDonePasses(clips: any[], clipTransforms: { clipIndex: number; passes: ReturnType<typeof resolveTransforms> }[]) {
+  let done = 0;
+  for (const ct of clipTransforms) {
+    const clip = clips[ct.clipIndex];
+    for (let passIndex = 0; passIndex < ct.passes.length; passIndex++) {
+      const status = clip.transformPasses?.[passIndex]?.job?.status;
+      if (status === "completed" || status === "failed") done++;
+    }
+  }
+  return done;
 }

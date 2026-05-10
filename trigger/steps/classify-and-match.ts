@@ -12,6 +12,11 @@ export async function classifyAndMatch(projectId: string): Promise<string> {
   const project = await Project.findById(projectId);
   if (!project) throw new Error(`Project ${projectId} not found`);
 
+  if (project.clips?.length > 0) {
+    console.log(`[classify] existing clips found, skipping`);
+    return projectId;
+  }
+
   const style = await Style.findById(project.style).lean();
   if (!style) throw new Error("Style not found");
 

@@ -10,6 +10,7 @@ import {
   MAX_POLL_ATTEMPTS,
 } from "../helpers";
 import { buildVideoInput } from "@/libs/pipeline/build-video-input";
+import { resolveTransforms } from "@/libs/pipeline/resolve-transforms";
 
 export async function generateVideos(projectId: string): Promise<string> {
   await connectDB();
@@ -35,11 +36,24 @@ export async function generateVideos(projectId: string): Promise<string> {
       continue;
     }
 
+    if (clip.videoJob?.status === "completed" && clip.videoUrl) {
+      console.log(`[videogen] clip ${i}: already completed, skipping`);
+      continue;
+    }
+    if (clip.videoJob?.status === "processing" && clip.videoJob.falRequestId) {
+      console.log(`[videogen] clip ${i}: already processing, will poll`);
+      continue;
+    }
+    if (clip.videoJob?.status === "failed") {
+      console.log(`[videogen] clip ${i}: already failed, skipping`);
+      continue;
+    }
+
     // Skip clips where image transform failed
-    const hadTransforms = shot.imageTransforms?.length > 0 || shot.imagePrompt;
-    if (hadTransforms && clip.imageJob?.status === "failed") {
-      console.log(`[videogen] clip ${i}: skipping — transform failed`);
-      clip.videoJob = { status: "failed", error: "Skipped: image transform failed" };
+    const requiresTransform = resolveTransforms(shot).length > 0;
+    if (requiresTransform && clip.imageJob?.status !== "completed") {
+      console.log(`[videogen] clip ${i}: skipping — transform did not complete`);
+      clip.videoJob = { status: "failed", error: "Skipped: image transform did not complete" };
       continue;
     }
 
@@ -47,7 +61,8 @@ export async function generateVideos(projectId: string): Promise<string> {
       // Determine source image
       let videoSourceUrl: string;
       if (clip.transformedImageUrl) {
-        const transformedKey = `projects/${projectId}/transformed-${i}.jpg`;
+        const finalPass = clip.transformPasses?.[clip.transformPasses.length - 1];
+        const transformedKey = finalPass?.outputR2Key || `projects/${projectId}/transformed-${i}.jpg`;
         try {
           videoSourceUrl = await createPresignedDownloadUrl(transformedKey);
         } catch {
@@ -158,9 +173,26 @@ export async function generateVideos(projectId: string): Promise<string> {
     if (allDone) break;
   }
 
+  for (const clip of project.clips) {
+    if (clip.videoJob?.status === "processing") {
+      clip.videoJob.status = "failed";
+      clip.videoJob.error = "Timed out waiting for Fal video job";
+    }
+  }
+
   const completedCount = project.clips.filter(
     (c: any) => c.videoJob?.status === "completed" && c.videoUrl
   ).length;
+  const failedCount = project.clips.filter(
+    (c: any) => c.videoJob?.status === "failed"
+  ).length;
+
+  if (failedCount > 0) {
+    project.status = "failed";
+    project.markModified("clips");
+    await project.save();
+    throw new Error(`${failedCount} video generation clip(s) failed`);
+  }
 
   if (completedCount === 0) {
     project.status = "failed";
