@@ -74,6 +74,7 @@ const projectSchema = mongoose.Schema(
       price: String,
       narrationNotes: String,
     },
+    generationOptions: mongoose.Schema.Types.Mixed,
     sourceImages: [sourceImageSchema],
     clips: [clipSchema],
     status: {
@@ -83,6 +84,8 @@ const projectSchema = mongoose.Schema(
         "classifying",
         "generating",
         "assembling",
+        "editing",
+        "rendering",
         "completed",
         "failed",
       ],

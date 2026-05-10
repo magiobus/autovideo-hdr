@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import apiClient from "@/libs/api";
 import { uploadFilesToR2 } from "@/helpers/uploadToR2";
+import { buildHyperframesComposition } from "@/libs/editor/hyperframes-composition";
 
 const fieldClass =
   "w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-white/25 focus:bg-white/[0.06]";
@@ -14,6 +15,58 @@ const pillButtonClass =
   "rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/30 disabled:text-black/50";
 const ghostButtonClass =
   "rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/75 transition hover:bg-white/10 hover:text-white";
+const optionButtonClass =
+  "flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left transition";
+
+const VOICE_PRESETS = [
+  {
+    id: "male-architect",
+    gender: "male",
+    label: "Architect",
+    tone: "warm, low, cinematic",
+    sample: "A quieter kind of luxury. Light, texture, and quiet intention.",
+    sampleUrl: "/samples/voices/male-architect.mp3?v=2",
+  },
+  {
+    id: "male-editorial",
+    gender: "male",
+    label: "Editorial",
+    tone: "calm, confident, refined",
+    sample: "Not every home asks for attention. Some simply hold it.",
+    sampleUrl: "/samples/voices/male-editorial.mp3?v=2",
+  },
+  {
+    id: "female-architect",
+    gender: "female",
+    label: "Architect",
+    tone: "warm, intimate, cinematic",
+    sample: "A slower rhythm. A brighter frame. A home designed to be felt.",
+    sampleUrl: "/samples/voices/female-architect.mp3?v=2",
+  },
+  {
+    id: "female-editorial",
+    gender: "female",
+    label: "Editorial",
+    tone: "soft, premium, restrained",
+    sample: "Stone, light, and proportion. Every detail lands quietly.",
+    sampleUrl: "/samples/voices/female-editorial.mp3?v=2",
+  },
+];
+
+const PRESENTER_PRESETS = [
+  { id: "male-1", gender: "male", name: "Julian", initials: "JL", imageUrl: "/samples/presenters/male-1.jpg", tone: "calm advisor" },
+  { id: "male-2", gender: "male", name: "Marcus", initials: "MR", imageUrl: "/samples/presenters/male-2.jpg", tone: "editorial host" },
+  { id: "male-3", gender: "male", name: "Theo", initials: "TH", imageUrl: "/samples/presenters/male-3.jpg", tone: "luxury broker" },
+  { id: "female-1", gender: "female", name: "Sofia", initials: "SF", imageUrl: "/samples/presenters/female-1.jpg", tone: "warm host" },
+  { id: "female-2", gender: "female", name: "Mara", initials: "MA", imageUrl: "/samples/presenters/female-2.jpg", tone: "premium guide" },
+  { id: "female-3", gender: "female", name: "Elena", initials: "EL", imageUrl: "/samples/presenters/female-3.jpg", tone: "editorial narrator" },
+];
+
+const MUSIC_PRESETS = [
+  { id: "minimal-house", label: "Minimal House", sampleUrl: "/samples/music/minimal-house.wav", prompt: "minimal ambient house, soft pulse, premium architectural film, no vocals" },
+  { id: "cinematic-piano", label: "Cinematic Piano", sampleUrl: "/samples/music/cinematic-piano.wav", prompt: "soft cinematic piano, warm pads, restrained low pulse, emotional but understated, no vocals" },
+  { id: "editorial-luxury", label: "Editorial Luxury", sampleUrl: "/samples/music/editorial-luxury.wav", prompt: "editorial luxury music bed, elegant synth pads, subtle percussion, polished, expensive, no vocals" },
+];
 
 const Logo = () => (
   <Link href="/" className="flex items-center gap-2 font-semibold text-white">
@@ -168,9 +221,12 @@ const Sidebar = ({
 // PROJECT ROW — Sidebar list item
 // ═══════════════════════════════════════════════════
 const ProjectRow = ({ project, isSelected, onClick }) => {
-  const isProcessing = ["generating", "classifying", "assembling"].includes(
+  const isProcessing = ["generating", "classifying", "assembling", "rendering"].includes(
     project.status
   );
+  const presenterEnabled =
+    project.generationOptions?.presenter?.enabled ||
+    project.generationOptions?.presenterBubble;
 
   return (
     <button
@@ -184,13 +240,11 @@ const ProjectRow = ({ project, isSelected, onClick }) => {
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">
-            {project.propertyInfo?.address || project.name}
+            {project.name || "Video Studio Project"}
           </p>
           <p className="mt-0.5 text-xs text-white/45">
             {project.clips?.length || 0} clips
-            {project.propertyInfo?.price
-              ? ` · ${project.propertyInfo.price}`
-              : ""}
+            {presenterEnabled ? " · presenter" : ""}
           </p>
         </div>
         <div className="shrink-0 flex items-center gap-1.5">
@@ -220,15 +274,35 @@ const CreateForm = ({ onCreated }) => {
   const fileInputRef = useRef(null);
   const [photos, setPhotos] = useState([]);
   const [propertyInfo, setPropertyInfo] = useState({
-    address: "",
-    price: "",
-    description: "",
     narrationNotes: "",
+  });
+  const [generationOptions, setGenerationOptions] = useState({
+    voiceover: {
+      enabled: true,
+      gender: "male",
+      voicePresetId: "male-architect",
+    },
+    music: {
+      enabled: true,
+      mode: "preset",
+      presetId: "minimal-house",
+      customPrompt: "",
+    },
+    supportText: {
+      enabled: true,
+    },
+    presenter: {
+      enabled: false,
+      gender: "male",
+      presenterId: "male-1",
+      customPrompt: "",
+    },
   });
   const [phase, setPhase] = useState("idle"); // idle | uploading | creating
   const [styles, setStyles] = useState([]);
   const [styleId, setStyleId] = useState(null);
   const [loadingStyles, setLoadingStyles] = useState(true);
+  const audioPreviewRef = useRef(null);
 
   useEffect(() => {
     apiClient
@@ -279,6 +353,7 @@ const CreateForm = ({ onCreated }) => {
           key: r.key,
         })),
         propertyInfo,
+        generationOptions,
       });
 
       toast.success("Video generation started!");
@@ -293,8 +368,90 @@ const CreateForm = ({ onCreated }) => {
     setPropertyInfo((prev) => ({ ...prev, [field]: e.target.value }));
   };
 
+  const setOptionEnabled = (field, enabled) => {
+    setGenerationOptions((prev) => {
+      const next = {
+        ...prev,
+        [field]: {
+          ...prev[field],
+          enabled,
+        },
+      };
+      if (field === "voiceover" && !enabled) {
+        next.presenter = {
+          ...prev.presenter,
+          enabled: false,
+        };
+      }
+      return next;
+    });
+  };
+
+  const updateOption = (field, patch) => {
+    setGenerationOptions((prev) => ({
+      ...prev,
+      [field]: {
+        ...prev[field],
+        ...patch,
+      },
+    }));
+  };
+
+  const handleVoiceGenderChange = (gender) => {
+    const preset = VOICE_PRESETS.find((voice) => voice.gender === gender);
+    const presenter = PRESENTER_PRESETS.find((item) => item.gender === gender);
+    setGenerationOptions((prev) => ({
+      ...prev,
+      voiceover: {
+        ...prev.voiceover,
+        gender,
+        voicePresetId: preset?.id || prev.voiceover.voicePresetId,
+      },
+      presenter: {
+        ...prev.presenter,
+        gender,
+        presenterId: presenter?.id || prev.presenter.presenterId,
+      },
+    }));
+  };
+
+  const playVoiceSample = (voicePreset) => {
+    if (voicePreset.sampleUrl) {
+      playAudioPreview(voicePreset.sampleUrl);
+      return;
+    }
+
+    if (!window.speechSynthesis) {
+      toast.error("Voice preview is not supported in this browser");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(voicePreset.sample);
+    utterance.rate = 0.82;
+    utterance.pitch = voicePreset.gender === "female" ? 1.08 : 0.86;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const playAudioPreview = (src) => {
+    if (!audioPreviewRef.current) return;
+    audioPreviewRef.current.pause();
+    audioPreviewRef.current.src = src;
+    audioPreviewRef.current.currentTime = 0;
+    audioPreviewRef.current.play().catch(() => {
+      toast.error("Could not play preview");
+    });
+  };
+
+  const selectedVoice = VOICE_PRESETS.find(
+    (voice) => voice.id === generationOptions.voiceover.voicePresetId
+  );
+  const selectedMusicPreset = MUSIC_PRESETS.find(
+    (preset) => preset.id === generationOptions.music.presetId
+  );
+
   return (
     <div className="flex-1 space-y-5 overflow-y-auto p-4">
+      <audio ref={audioPreviewRef} className="hidden" />
       {/* Photos */}
       <div>
         <h3 className={labelClass}>Photos</h3>
@@ -367,46 +524,240 @@ const CreateForm = ({ onCreated }) => {
         </div>
       )}
 
-      {/* Property info */}
-      <div className="space-y-2">
-        <h3 className={labelClass}>Property Info</h3>
-        <input
-          type="text"
-          placeholder="Address"
-          className={fieldClass}
-          value={propertyInfo.address}
-          onChange={handleChange("address")}
-        />
-        <input
-          type="text"
-          placeholder="Price"
-          className={fieldClass}
-          value={propertyInfo.price}
-          onChange={handleChange("price")}
-        />
-        <textarea
-          placeholder="Description (beds, baths, sqft, features...)"
-          className={`${textareaClass} h-20`}
-          value={propertyInfo.description}
-          onChange={handleChange("description")}
-        />
+      {/* Creative layers */}
+      <div>
+        <h3 className={labelClass}>Creative Layers</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <OptionToggle
+            label="Voice"
+            icon="VO"
+            active={generationOptions.voiceover.enabled}
+            onClick={() =>
+              setOptionEnabled("voiceover", !generationOptions.voiceover.enabled)
+            }
+          />
+          <OptionToggle
+            label="Music"
+            icon="MU"
+            active={generationOptions.music.enabled}
+            onClick={() =>
+              setOptionEnabled("music", !generationOptions.music.enabled)
+            }
+          />
+          <OptionToggle
+            label="Text"
+            icon="T"
+            active={generationOptions.supportText.enabled}
+            onClick={() =>
+              setOptionEnabled("supportText", !generationOptions.supportText.enabled)
+            }
+          />
+          <OptionToggle
+            label="Presenter"
+            icon="AV"
+            active={generationOptions.presenter.enabled}
+            disabled={!generationOptions.voiceover.enabled}
+            onClick={() =>
+              generationOptions.voiceover.enabled &&
+              setOptionEnabled("presenter", !generationOptions.presenter.enabled)
+            }
+          />
+        </div>
       </div>
 
-      {/* Narration notes */}
+      {generationOptions.voiceover.enabled && (
+        <div className="space-y-3 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
+          <div>
+            <h3 className={labelClass}>Voice</h3>
+            <div className="grid grid-cols-2 gap-1 rounded-full bg-white/[0.04] p-1">
+              {["male", "female"].map((gender) => (
+                <button
+                  key={gender}
+                  type="button"
+                  onClick={() => handleVoiceGenderChange(gender)}
+                  className={`rounded-full px-3 py-2 text-xs font-medium capitalize transition ${
+                    generationOptions.voiceover.gender === gender
+                      ? "bg-white text-black"
+                      : "text-white/50 hover:text-white"
+                  }`}
+                >
+                  {gender}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {VOICE_PRESETS.filter(
+              (voice) => voice.gender === generationOptions.voiceover.gender
+            ).map((voice) => (
+              <div
+                key={voice.id}
+                className={`rounded-xl border p-3 transition ${
+                  generationOptions.voiceover.voicePresetId === voice.id
+                    ? "border-white/25 bg-white/[0.07]"
+                    : "border-white/5 bg-white/[0.02]"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() =>
+                      updateOption("voiceover", { voicePresetId: voice.id })
+                    }
+                  >
+                    <p className="text-sm font-medium text-white">{voice.label}</p>
+                    <p className="mt-0.5 truncate text-xs text-white/40">
+                      {voice.tone}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => playVoiceSample(voice)}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 transition hover:bg-white/10 hover:text-white"
+                  >
+                    Sample
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {generationOptions.presenter.enabled && generationOptions.voiceover.enabled && (
+        <div className="space-y-3 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
+          <div className="flex items-center justify-between">
+            <h3 className={labelClass}>Presenter</h3>
+            <span className="mb-2 text-[10px] uppercase tracking-wider text-white/30">
+              {generationOptions.presenter.gender}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {PRESENTER_PRESETS.filter(
+              (presenter) => presenter.gender === generationOptions.presenter.gender
+            ).map((presenter) => (
+              <button
+                key={presenter.id}
+                type="button"
+                onClick={() =>
+                  updateOption("presenter", { presenterId: presenter.id })
+                }
+                className={`rounded-2xl border p-2 text-center transition ${
+                  generationOptions.presenter.presenterId === presenter.id
+                    ? "border-white/30 bg-white/[0.08]"
+                    : "border-white/5 bg-white/[0.02] hover:border-white/15"
+                }`}
+              >
+                {presenter.imageUrl ? (
+                  <img
+                    src={presenter.imageUrl}
+                    alt=""
+                    className="mx-auto h-12 w-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#d7c6a0,#6f8ea3)] text-xs font-semibold text-black">
+                    {presenter.initials}
+                  </span>
+                )}
+                <span className="mt-2 block truncate text-xs font-medium text-white">
+                  {presenter.name}
+                </span>
+              </button>
+            ))}
+          </div>
+          <textarea
+            placeholder="Custom presenter prompt, e.g. polished Compass-style agent, black turtleneck, soft studio light"
+            className={`${textareaClass} h-20`}
+            value={generationOptions.presenter.customPrompt}
+            onChange={(e) =>
+              updateOption("presenter", { customPrompt: e.target.value })
+            }
+          />
+        </div>
+      )}
+
+      {generationOptions.music.enabled && (
+        <div className="space-y-3 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
+          <h3 className={labelClass}>Music</h3>
+          <div className="grid grid-cols-2 gap-1 rounded-full bg-white/[0.04] p-1">
+            {["preset", "custom"].map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => updateOption("music", { mode })}
+                className={`rounded-full px-3 py-2 text-xs font-medium capitalize transition ${
+                  generationOptions.music.mode === mode
+                    ? "bg-white text-black"
+                    : "text-white/50 hover:text-white"
+                }`}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+
+          {generationOptions.music.mode === "preset" ? (
+            <div className="space-y-2">
+              {MUSIC_PRESETS.map((preset) => (
+                <div
+                  key={preset.id}
+                  className={`w-full rounded-xl border p-3 text-left transition ${
+                    generationOptions.music.presetId === preset.id
+                      ? "border-white/25 bg-white/[0.07]"
+                      : "border-white/5 bg-white/[0.02] hover:border-white/15"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() => updateOption("music", { presetId: preset.id })}
+                  >
+                    <span className="block text-sm font-medium text-white">
+                      {preset.label}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-white/40">
+                      {preset.prompt}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => playAudioPreview(preset.sampleUrl)}
+                    className="mt-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 transition hover:bg-white/10 hover:text-white"
+                  >
+                    Sample
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <textarea
+              placeholder="Describe the music bed: luxury ambient house, no vocals, soft pulse, emotional but restrained"
+              className={`${textareaClass} h-24`}
+              value={generationOptions.music.customPrompt}
+              onChange={(e) =>
+                updateOption("music", { customPrompt: e.target.value })
+              }
+            />
+          )}
+          {selectedMusicPreset && generationOptions.music.mode === "preset" && (
+            <p className="text-[10px] text-white/30">
+              Music prompt: {selectedMusicPreset.prompt}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Creative direction */}
       <div>
-        <h3 className={labelClass}>
-          Narration Notes{" "}
-          <span className="font-normal text-white/30">(optional)</span>
-        </h3>
+        <h3 className={labelClass}>Creative Direction</h3>
         <textarea
-          placeholder={"Things to mention in voiceover:\n• Great BBQ area\n• Walking distance to downtown\n• Italian marble kitchen"}
-          className={`${textareaClass} h-24`}
+          placeholder={"Optional notes:\n• quiet luxury\n• moody kitchen details\n• emphasize daylight and texture"}
+          className={`${textareaClass} h-28`}
           value={propertyInfo.narrationNotes}
           onChange={handleChange("narrationNotes")}
         />
-        <p className="mt-1 text-[10px] text-white/30">
-          Combined with features detected in your photos
-        </p>
       </div>
 
       {/* Generate button */}
@@ -429,6 +780,11 @@ const CreateForm = ({ onCreated }) => {
           "Generate Video"
         )}
       </button>
+      {selectedVoice && (
+        <p className="text-center text-[10px] text-white/30">
+          Selected voice: {selectedVoice.label} / {selectedVoice.gender}
+        </p>
+      )}
     </div>
   );
 };
@@ -436,14 +792,209 @@ const CreateForm = ({ onCreated }) => {
 // ═══════════════════════════════════════════════════
 // PROJECT DETAIL — Main area when a project is selected
 // ═══════════════════════════════════════════════════
-const ProjectDetail = ({ project }) => {
+const ProjectDetail = ({ project, onRefresh }) => {
+  const previewRef = useRef(null);
   const [selectedClip, setSelectedClip] = useState(null);
+  const [editorDraft, setEditorDraft] = useState(null);
+  const [selectedTextId, setSelectedTextId] = useState(null);
+  const [selectedOverlayId, setSelectedOverlayId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [rendering, setRendering] = useState(false);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [previewTime, setPreviewTime] = useState(0);
+  const presenterEnabled =
+    project.generationOptions?.presenter?.enabled ||
+    project.generationOptions?.presenterBubble;
+  const editorState =
+    editorDraft?.projectId === project._id
+      ? editorDraft.editorState
+      : project.editorState || null;
 
-  const isProcessing = ["generating", "classifying", "assembling"].includes(
+  const isProcessing = ["generating", "classifying", "assembling", "rendering"].includes(
     project.status
   );
   const completedClips =
     project.clips?.filter((c) => c.videoJob?.status === "completed") || [];
+  const videoItems =
+    editorState?.tracks?.find((track) => track.id === "video")?.items || [];
+  const textItems =
+    editorState?.tracks?.find((track) => track.id === "text")?.items || [];
+  const overlayItems =
+    editorState?.tracks?.find((track) => track.id === "overlay")?.items || [];
+  const legacyAudioItems =
+    editorState?.tracks?.find((track) => track.id === "audio")?.items || [];
+  const voiceoverItems =
+    editorState?.tracks?.find((track) => track.id === "voiceover")?.items ||
+    legacyAudioItems.filter((item) => item.id === "voiceover");
+  const musicItems =
+    editorState?.tracks?.find((track) => track.id === "music")?.items ||
+    legacyAudioItems.filter((item) => item.id === "music");
+  const voiceoverTrackId = editorState?.tracks?.some((track) => track.id === "voiceover")
+    ? "voiceover"
+    : "audio";
+  const musicTrackId = editorState?.tracks?.some((track) => track.id === "music")
+    ? "music"
+    : "audio";
+  const selectedOverlay = overlayItems.find((item) => item.id === selectedOverlayId);
+  const selectedText = textItems.find((item) => item.id === selectedTextId);
+  const activeOverlay = selectedOverlay || (!selectedTextId ? overlayItems[0] : null);
+  const activeText = activeOverlay ? null : selectedText || textItems[0];
+  const hasEditor = Boolean(editorState);
+  const isRenderDirty = editorState?.render?.status === "dirty";
+  const previewDuration = Math.max(0.1, editorState?.duration || 0.1);
+  const livePreviewHtml = useMemo(
+    () =>
+      editorState
+        ? buildHyperframesComposition(editorState, { includePreviewRuntime: true })
+        : "",
+    [editorState]
+  );
+
+  const sendPreviewCommand = useCallback((action, time = previewTime) => {
+    previewRef.current?.contentWindow?.postMessage(
+      {
+        type: "autohdr-preview",
+        action,
+        time,
+      },
+      "*"
+    );
+  }, [previewTime]);
+
+  useEffect(() => {
+    const handleMessage = (event) => {
+      if (event.data?.type !== "autohdr-preview-time") return;
+      setPreviewTime(event.data.time || 0);
+      setIsPreviewPlaying(Boolean(event.data.playing));
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const tag = event.target?.tagName?.toLowerCase();
+      if (!hasEditor || ["input", "textarea", "select"].includes(tag)) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        sendPreviewCommand(isPreviewPlaying ? "pause" : "play");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [hasEditor, isPreviewPlaying, sendPreviewCommand]);
+
+  const seekPreview = (time) => {
+    const nextTime = Math.max(0, Math.min(previewDuration, Number(time) || 0));
+    setPreviewTime(nextTime);
+    sendPreviewCommand("seek", nextTime);
+  };
+
+  const syncPreviewAfterLoad = useCallback(() => {
+    window.setTimeout(() => {
+      sendPreviewCommand("seek", previewTime);
+      if (isPreviewPlaying) sendPreviewCommand("play", previewTime);
+    }, 0);
+  }, [isPreviewPlaying, previewTime, sendPreviewCommand]);
+
+  const updateEditorState = (updater) => {
+    setEditorDraft((current) => {
+      const prev =
+        current?.projectId === project._id
+          ? current.editorState
+          : project.editorState || null;
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      return {
+        projectId: project._id,
+        editorState: normalizeClientEditorState({
+          ...next,
+          render: {
+            ...(next.render || {}),
+            status: next.render?.status === "rendering" ? "rendering" : "dirty",
+          },
+        }),
+      };
+    });
+  };
+
+  const saveEditor = async () => {
+    if (!editorState) return;
+    setSaving(true);
+    try {
+      const result = await apiClient.patch(`/projects/${project._id}/editor`, {
+        editorState,
+      });
+      setEditorDraft({ projectId: project._id, editorState: result.editorState });
+      toast.success("Edit saved");
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renderProject = async () => {
+    setRendering(true);
+    try {
+      if (isRenderDirty) await saveEditor();
+      await apiClient.post(`/projects/${project._id}/render`);
+      toast.success("Render started");
+      onRefresh?.();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || err.message);
+    } finally {
+      setRendering(false);
+    }
+  };
+
+  const updateTrackItem = (trackId, itemId, patch) => {
+    updateEditorState((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((track) =>
+        track.id === trackId
+          ? {
+              ...track,
+              items: track.items.map((item) =>
+                item.id === itemId ? { ...item, ...patch } : item
+              ),
+            }
+          : track
+      ),
+    }));
+  };
+
+  const updateTextItem = (itemId, patch) => {
+    updateEditorState((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((track) =>
+        track.id === "text"
+          ? {
+              ...track,
+              items: track.items.map((item) =>
+                item.id === itemId ? { ...item, ...patch } : item
+              ),
+            }
+          : track
+      ),
+    }));
+  };
+
+  const updateOverlayItem = (itemId, patch) => {
+    updateEditorState((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((track) =>
+        track.id === "overlay"
+          ? {
+              ...track,
+              items: track.items.map((item) =>
+                item.id === itemId ? { ...item, ...patch } : item
+              ),
+            }
+          : track
+      ),
+    }));
+  };
 
   return (
     <>
@@ -451,16 +1002,35 @@ const ProjectDetail = ({ project }) => {
       <div className="flex items-center justify-between border-b border-white/5 bg-black/50 px-6 py-4 backdrop-blur-xl">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold text-white">
-            {project.propertyInfo?.address || project.name}
+            {project.name || "Video Studio Project"}
           </h1>
-          {project.propertyInfo?.price && (
-            <p className="text-xs text-white/45">
-              {project.propertyInfo.price}
-            </p>
-          )}
+          <p className="text-xs text-white/45">
+            {(project.clips?.length || 0)} clips
+            {presenterEnabled ? " · presenter selected" : ""}
+          </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <StatusBadge status={project.status} />
+          {hasEditor && (
+            <button
+              type="button"
+              className={ghostButtonClass}
+              onClick={saveEditor}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Save edit"}
+            </button>
+          )}
+          {hasEditor && (
+            <button
+              type="button"
+              className={pillButtonClass}
+              onClick={renderProject}
+              disabled={rendering || project.status === "rendering"}
+            >
+              {rendering || project.status === "rendering" ? "Rendering..." : "Render"}
+            </button>
+          )}
           {project.finalVideoUrl && (
             <a
               href={project.finalVideoUrl}
@@ -480,11 +1050,35 @@ const ProjectDetail = ({ project }) => {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Video preview */}
         <div className="flex flex-1 items-center justify-center p-6">
-          {project.finalVideoUrl ? (
+          {hasEditor ? (
+            <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
+              <iframe
+                ref={previewRef}
+                key={project._id}
+                title="Video edit preview"
+                srcDoc={livePreviewHtml}
+                className="aspect-video w-full"
+                allow="autoplay; fullscreen"
+                onLoad={syncPreviewAfterLoad}
+              />
+              <PreviewTransport
+                currentTime={previewTime}
+                duration={previewDuration}
+                isPlaying={isPreviewPlaying}
+                onPlayPause={() =>
+                  sendPreviewCommand(isPreviewPlaying ? "pause" : "play")
+                }
+                onStop={() => {
+                  setPreviewTime(0);
+                  sendPreviewCommand("stop", 0);
+                }}
+                onSeek={seekPreview}
+              />
+            </div>
+          ) : project.finalVideoUrl ? (
             <video
               src={project.finalVideoUrl}
               controls
-              autoPlay
               className="max-h-full max-w-full rounded-2xl border border-white/10 shadow-2xl"
               style={{ aspectRatio: "16/9" }}
             />
@@ -504,7 +1098,29 @@ const ProjectDetail = ({ project }) => {
         </div>
 
         {/* Right panel — clip details */}
-        {selectedClip !== null && project.clips?.[selectedClip] && (
+        {hasEditor && (
+          <EditorInspector
+            overlayItems={overlayItems}
+            textItems={textItems}
+            activeOverlay={activeOverlay}
+            activeText={activeText}
+            onSelectOverlay={(id) => {
+              setSelectedOverlayId(id);
+              setSelectedTextId(null);
+            }}
+            onSelectText={(id) => {
+              setSelectedTextId(id);
+              setSelectedOverlayId(null);
+            }}
+            onOverlayChange={(patch) =>
+              activeOverlay && updateOverlayItem(activeOverlay.id, patch)
+            }
+            onTextChange={(patch) =>
+              activeText && updateTextItem(activeText.id, patch)
+            }
+          />
+        )}
+        {!hasEditor && selectedClip !== null && project.clips?.[selectedClip] && (
           <ClipPanel
             clip={project.clips[selectedClip]}
             index={selectedClip}
@@ -514,14 +1130,634 @@ const ProjectDetail = ({ project }) => {
       </div>
 
       {/* Bottom timeline */}
-      {project.clips?.length > 0 && (
-        <ClipTimeline
-          clips={project.clips}
-          selectedClip={selectedClip}
-          onSelect={(i) => setSelectedClip(selectedClip === i ? null : i)}
+      {hasEditor ? (
+        <EditorTimeline
+          videoItems={videoItems}
+          textItems={textItems}
+          overlayItems={overlayItems}
+          voiceoverItems={voiceoverItems}
+          musicItems={musicItems}
+          voiceoverTrackId={voiceoverTrackId}
+          musicTrackId={musicTrackId}
+          selectedTextId={activeText?.id}
+          selectedOverlayId={activeOverlay?.id}
+          currentTime={previewTime}
+          duration={previewDuration}
+          isPlaying={isPreviewPlaying}
+          onSeek={seekPreview}
+          onItemChange={updateTrackItem}
+          onSelectText={(id) => {
+            setSelectedTextId(id);
+            setSelectedOverlayId(null);
+          }}
+          onSelectOverlay={(id) => {
+            setSelectedOverlayId(id);
+            setSelectedTextId(null);
+          }}
         />
+      ) : (
+        project.clips?.length > 0 && (
+          <ClipTimeline
+            clips={project.clips}
+            selectedClip={selectedClip}
+            onSelect={(i) => setSelectedClip(selectedClip === i ? null : i)}
+          />
+        )
       )}
     </>
+  );
+};
+
+const normalizeClientEditorState = (editorState) => {
+  const itemEnds = (editorState.tracks || [])
+    .flatMap((track) => track.items || [])
+    .map((item) => Number(item.start || 0) + Number(item.duration || 0));
+  return { ...editorState, duration: Math.max(0.1, ...itemEnds) };
+};
+
+const PreviewTransport = ({
+  currentTime,
+  duration,
+  isPlaying,
+  onPlayPause,
+  onStop,
+  onSeek,
+}) => (
+  <div className="flex items-center gap-3 border-t border-white/10 bg-black/90 px-4 py-3">
+    <button
+      type="button"
+      onClick={onPlayPause}
+      className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black transition hover:bg-white/90"
+      aria-label={isPlaying ? "Pause preview" : "Play preview"}
+    >
+      {isPlaying ? "Ⅱ" : "▶"}
+    </button>
+    <button
+      type="button"
+      onClick={onStop}
+      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-sm text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+      aria-label="Stop preview"
+    >
+      ■
+    </button>
+    <span className="w-28 font-mono text-xs text-white/55">
+      {formatTime(currentTime)} / {formatTime(duration)}
+    </span>
+    <input
+      type="range"
+      min="0"
+      max={duration}
+      step="0.01"
+      value={Math.min(currentTime, duration)}
+      onChange={(e) => onSeek(e.target.value)}
+      className="h-1 flex-1 accent-white"
+      aria-label="Preview timeline scrubber"
+    />
+  </div>
+);
+
+const EditorTimeline = ({
+  videoItems,
+  textItems,
+  overlayItems,
+  voiceoverItems,
+  musicItems,
+  voiceoverTrackId,
+  musicTrackId,
+  selectedTextId,
+  selectedOverlayId,
+  currentTime,
+  duration,
+  isPlaying,
+  onSeek,
+  onItemChange,
+  onSelectText,
+  onSelectOverlay,
+}) => {
+  const allTimelineItems = [
+    ...videoItems,
+    ...overlayItems,
+    ...textItems,
+    ...voiceoverItems,
+    ...musicItems,
+  ];
+  const timelineDuration = Math.max(
+    duration || 10,
+    ...allTimelineItems.map(
+      (item) => Number(item.start || 0) + Number(item.duration || 0)
+    )
+  );
+  const pixelsPerSecond = 28;
+  const trackWidth = Math.max(720, timelineDuration * pixelsPerSecond);
+
+  return (
+    <div className="border-t border-white/5 bg-black/75 px-5 py-4 backdrop-blur-xl">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wider text-white/40">
+          Timeline
+        </span>
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${isPlaying ? "bg-emerald-400" : "bg-white/20"}`} />
+          <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-xs text-white/35">
+            {formatTime(currentTime)} / {formatTime(timelineDuration)}
+          </span>
+        </div>
+      </div>
+      <div className="overflow-x-auto pb-1">
+        <div className="min-w-max">
+          <div className="mb-1 grid grid-cols-[86px_1fr] gap-2">
+            <div />
+            <TimeRuler duration={timelineDuration} width={trackWidth} />
+          </div>
+          <TimelineTrack label="Video" width={trackWidth} currentTime={currentTime} duration={timelineDuration} onSeek={onSeek}>
+            {videoItems.map((item, index) => (
+              <TimelineBlock
+                key={item.id}
+                item={item}
+                trackId="video"
+                width={trackWidth}
+                duration={timelineDuration}
+                color="pink"
+                onChange={onItemChange}
+              >
+                <div className="flex h-full items-center gap-2 px-2">
+                  <div className="h-10 w-16 shrink-0 overflow-hidden rounded bg-black/20">
+                    {item.sourceUrl ? (
+                      <video src={item.sourceUrl} muted className="h-full w-full object-cover" />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block truncate text-xs font-semibold text-white">
+                      Clip {index + 1}
+                    </span>
+                    <span className="block font-mono text-[10px] text-white/70">
+                      {Number(item.start || 0).toFixed(1)}s / {Number(item.duration || 0).toFixed(1)}s
+                    </span>
+                  </div>
+                </div>
+              </TimelineBlock>
+            ))}
+          </TimelineTrack>
+          {overlayItems.length > 0 && (
+          <TimelineTrack label="Avatar" width={trackWidth} currentTime={currentTime} duration={timelineDuration} onSeek={onSeek}>
+            {overlayItems.map((item) => (
+              <TimelineBlock
+                key={item.id}
+                item={item}
+                trackId="overlay"
+                width={trackWidth}
+                duration={timelineDuration}
+                color="cyan"
+                selected={selectedOverlayId === item.id}
+                onChange={onItemChange}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectOverlay(item.id);
+                }}
+              >
+                <span className="block truncate font-medium">Presenter bubble</span>
+                <span className="block font-mono text-[10px] opacity-65">
+                  {Number(item.start || 0).toFixed(1)}s / {Number(item.duration || 0).toFixed(1)}s
+                </span>
+              </TimelineBlock>
+            ))}
+            </TimelineTrack>
+      )}
+      {textItems.length > 0 && (
+          <TimelineTrack label="Text" width={trackWidth} currentTime={currentTime} duration={timelineDuration} onSeek={onSeek}>
+            {textItems.map((item) => (
+              <TimelineBlock
+                key={item.id}
+                item={item}
+                trackId="text"
+                width={trackWidth}
+                duration={timelineDuration}
+                color="violet"
+                selected={selectedTextId === item.id}
+                onChange={onItemChange}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectText(item.id);
+                }}
+              >
+                <span className="block truncate font-medium">
+                  {item.text || "Text"}
+                </span>
+                <span className="block font-mono text-[10px] opacity-60">
+                  {Number(item.start || 0).toFixed(1)}s / {Number(item.duration || 0).toFixed(1)}s
+                </span>
+              </TimelineBlock>
+            ))}
+            </TimelineTrack>
+      )}
+          {voiceoverItems.length > 0 && (
+            <TimelineTrack label="Voice" width={trackWidth} currentTime={currentTime} duration={timelineDuration} onSeek={onSeek}>
+              {voiceoverItems.map((item) => (
+                <TimelineBlock
+                  key={item.id}
+                  item={item}
+                  trackId={voiceoverTrackId}
+                  width={trackWidth}
+                  duration={timelineDuration}
+                  color="emerald"
+                  onChange={onItemChange}
+                >
+                  <span className="block truncate font-medium">Voiceover</span>
+                  <span className="block font-mono text-[10px] opacity-65">
+                    {Number(item.start || 0).toFixed(1)}s / {Number(item.duration || 0).toFixed(1)}s
+                  </span>
+                </TimelineBlock>
+              ))}
+            </TimelineTrack>
+          )}
+          {musicItems.length > 0 && (
+            <TimelineTrack label="Music" width={trackWidth} currentTime={currentTime} duration={timelineDuration} onSeek={onSeek}>
+              {musicItems.map((item) => (
+                <TimelineBlock
+                  key={item.id}
+                  item={item}
+                  trackId={musicTrackId}
+                  width={trackWidth}
+                  duration={timelineDuration}
+                  color="amber"
+                  onChange={onItemChange}
+                >
+                  <span className="block truncate font-medium">Music bed</span>
+                  <span className="block font-mono text-[10px] opacity-65">
+                    {Number(item.start || 0).toFixed(1)}s / {Number(item.duration || 0).toFixed(1)}s
+                  </span>
+                </TimelineBlock>
+              ))}
+            </TimelineTrack>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TimelineTrack = ({ label, width, currentTime, duration, onSeek, children }) => (
+  <div className="mb-2 grid grid-cols-[86px_1fr] gap-2">
+    <div className="flex h-14 items-center rounded-lg border border-white/5 bg-white/[0.025] px-3 text-xs font-medium uppercase tracking-wider text-white/35">
+      {label}
+    </div>
+    <div
+      className="relative h-14 rounded-lg border border-white/5 bg-white/[0.025]"
+      style={{ width }}
+      onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = (event.clientX - rect.left) / rect.width;
+        onSeek(Math.max(0, Math.min(duration, ratio * duration)));
+      }}
+    >
+      <div
+        className="pointer-events-none absolute bottom-0 top-0 z-30 w-px bg-rose-400"
+        style={{ left: `${Math.min(100, Math.max(0, (currentTime / duration) * 100))}%` }}
+      />
+      {children}
+    </div>
+  </div>
+);
+
+const TimeRuler = ({ duration, width }) => {
+  const marks = Array.from({ length: Math.floor(duration / 5) + 1 }, (_, i) => i * 5);
+  return (
+    <div className="relative h-6" style={{ width }}>
+      {marks.map((mark) => (
+        <div
+          key={mark}
+          className="absolute top-0 h-full border-l border-white/10 pl-1 font-mono text-[10px] text-white/30"
+          style={{ left: `${(mark / duration) * 100}%` }}
+        >
+          {mark}s
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const TimelineBlock = ({
+  item,
+  trackId,
+  width,
+  duration,
+  color,
+  selected = false,
+  onChange,
+  onClick,
+  children,
+}) => {
+  const colorClass = {
+    pink: "border-pink-300/40 bg-pink-500/85 text-white hover:ring-pink-200/40",
+    cyan: selected
+      ? "border-cyan-100/70 bg-cyan-400/35 text-cyan-50 hover:ring-cyan-100/40"
+      : "border-cyan-300/30 bg-cyan-500/25 text-cyan-100 hover:ring-cyan-200/30",
+    violet: selected
+      ? "border-violet-100/70 bg-violet-500/60 text-white hover:ring-violet-100/40"
+      : "border-violet-300/25 bg-violet-500/35 text-violet-100 hover:ring-violet-200/30",
+    emerald: "border-emerald-300/30 bg-emerald-500/25 text-emerald-50 hover:ring-emerald-200/30",
+    amber: "border-amber-300/30 bg-amber-500/25 text-amber-50 hover:ring-amber-200/30",
+  }[color];
+
+  const startEdit = (event, mode) => {
+    startTimelinePointerEdit({
+      event,
+      item,
+      mode,
+      timelineDuration: duration,
+      trackWidth: width,
+      minDuration: item.kind === "video" ? 0.6 : 0.2,
+      onChange: (patch) => onChange(trackId, item.id, patch),
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onPointerDown={(event) => startEdit(event, "move")}
+      onClick={onClick || ((event) => event.stopPropagation())}
+      className={`absolute top-1 h-12 overflow-hidden rounded-lg border text-left text-xs shadow-sm transition hover:ring-2 ${colorClass}`}
+      style={timelineBlockStyle(item, width, duration)}
+    >
+      <span
+        role="presentation"
+        onPointerDown={(event) => startEdit(event, "trim-left")}
+        className="absolute bottom-0 left-0 top-0 z-10 w-3 cursor-ew-resize bg-white/10 opacity-0 transition hover:opacity-100"
+      />
+      <div className="h-full min-w-0 px-3 py-2">{children}</div>
+      <span
+        role="presentation"
+        onPointerDown={(event) => startEdit(event, "trim-right")}
+        className="absolute bottom-0 right-0 top-0 z-10 w-3 cursor-ew-resize bg-white/10 opacity-0 transition hover:opacity-100"
+      />
+    </button>
+  );
+};
+
+const startTimelinePointerEdit = ({
+  event,
+  item,
+  mode,
+  timelineDuration,
+  trackWidth,
+  minDuration,
+  onChange,
+}) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const startX = event.clientX;
+  const originalStart = Number(item.start || 0);
+  const originalDuration = Math.max(minDuration, Number(item.duration || minDuration));
+  const originalEnd = originalStart + originalDuration;
+  const originalTrimStart = Number(item.trimStart || 0);
+  const canTrimSource = ["video", "audio", "bubble"].includes(item.kind);
+  const secondsPerPixel = timelineDuration / trackWidth;
+
+  const move = (moveEvent) => {
+    const delta = (moveEvent.clientX - startX) * secondsPerPixel;
+    if (mode === "trim-left") {
+      const minStart = canTrimSource ? Math.max(0, originalStart - originalTrimStart) : 0;
+      const nextStart = Math.max(
+        minStart,
+        Math.min(originalStart + delta, originalEnd - minDuration)
+      );
+      const patch = {
+        start: roundTimelineValue(nextStart),
+        duration: roundTimelineValue(originalEnd - nextStart),
+      };
+      if (canTrimSource) {
+        patch.trimStart = roundTimelineValue(
+          Math.max(0, originalTrimStart + nextStart - originalStart)
+        );
+      }
+      onChange(patch);
+      return;
+    }
+    if (mode === "trim-right") {
+      onChange({
+        duration: roundTimelineValue(Math.max(minDuration, originalDuration + delta)),
+      });
+      return;
+    }
+    onChange({ start: roundTimelineValue(Math.max(0, originalStart + delta)) });
+  };
+
+  const stop = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", stop);
+  };
+
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", stop, { once: true });
+};
+
+const roundTimelineValue = (value) => Math.round(Math.max(0, Number(value) || 0) * 100) / 100;
+
+const timelineBlockStyle = (item, width, duration) => ({
+  left: `${((Number(item.start || 0) / duration) * width).toFixed(2)}px`,
+  width: `${Math.max(54, (Number(item.duration || 0.1) / duration) * width).toFixed(2)}px`,
+});
+
+const formatTime = (seconds) => {
+  const safeSeconds = Math.max(0, Number(seconds) || 0);
+  const minutes = Math.floor(safeSeconds / 60);
+  const wholeSeconds = Math.floor(safeSeconds % 60);
+  const tenths = Math.floor((safeSeconds % 1) * 10);
+  return `${minutes}:${String(wholeSeconds).padStart(2, "0")}.${tenths}`;
+};
+
+const EditorInspector = ({
+  overlayItems,
+  textItems,
+  activeOverlay,
+  activeText,
+  onSelectOverlay,
+  onSelectText,
+  onOverlayChange,
+  onTextChange,
+}) => (
+  <aside className="flex w-96 shrink-0 flex-col overflow-hidden border-l border-white/5 bg-black/70 backdrop-blur-xl">
+    <div className="border-b border-white/5 px-4 py-4">
+      <h3 className="text-sm font-semibold text-white">Layers</h3>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {overlayItems.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelectOverlay(item.id)}
+            className={`rounded-full border px-3 py-1.5 text-xs ${
+              activeOverlay?.id === item.id
+                ? "border-cyan-200/50 bg-cyan-300/20 text-cyan-50"
+                : "border-white/10 bg-white/[0.03] text-white/50"
+            }`}
+          >
+            Presenter
+          </button>
+        ))}
+        {textItems.map((item, index) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelectText(item.id)}
+            className={`rounded-full border px-3 py-1.5 text-xs ${
+              activeText?.id === item.id
+                ? "border-white/30 bg-white/10 text-white"
+                : "border-white/10 bg-white/[0.03] text-white/50"
+            }`}
+          >
+            Text {index + 1}
+          </button>
+        ))}
+      </div>
+    </div>
+    {activeOverlay ? (
+      <BubblePanel item={activeOverlay} onChange={onOverlayChange} embedded />
+    ) : activeText ? (
+      <TextPanel item={activeText} onChange={onTextChange} embedded />
+    ) : (
+      <div className="p-4 text-sm text-white/35">No editable layers</div>
+    )}
+  </aside>
+);
+
+const BubblePanel = ({ item, onChange, embedded = false }) => {
+  const content = (
+    <>
+      <div className="border-b border-white/5 px-4 py-4">
+      <h3 className="text-sm font-semibold text-white">Presenter Bubble</h3>
+    </div>
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+        {item.sourceUrl ? (
+          <img
+            src={item.sourceUrl}
+            alt=""
+            className="mx-auto aspect-square w-28 rounded-full object-cover ring-2 ring-white/70"
+          />
+        ) : null}
+      </div>
+      <div>
+        <p className="mb-1 text-xs text-white/40">Shape</p>
+        <select
+          className={fieldClass}
+          value={item.shape || "circle"}
+          onChange={(e) => onChange({ shape: e.target.value })}
+        >
+          <option value="circle">Circle</option>
+          <option value="rounded">Rounded square</option>
+        </select>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField label="X" value={item.x || 0} onChange={(x) => onChange({ x })} />
+        <NumberField label="Y" value={item.y || 0} onChange={(y) => onChange({ y })} />
+        <NumberField label="Width" value={item.width || 320} onChange={(width) => onChange({ width })} />
+        <NumberField label="Height" value={item.height || 320} onChange={(height) => onChange({ height })} />
+        <NumberField label="Start" value={item.start || 0} step="0.25" onChange={(start) => onChange({ start })} />
+        <NumberField label="Duration" value={item.duration || 1} step="0.25" onChange={(duration) => onChange({ duration: Math.max(0.5, duration) })} />
+      </div>
+      <div>
+        <p className="mb-1 text-xs text-white/40">Source URL</p>
+        <input
+          className={fieldClass}
+          value={item.sourceUrl || ""}
+          onChange={(e) => onChange({ sourceUrl: e.target.value })}
+        />
+      </div>
+    </div>
+    </>
+  );
+  return embedded ? (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>
+  ) : (
+    <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-white/5 bg-black/70 backdrop-blur-xl">
+      {content}
+    </aside>
+  );
+};
+
+const NumberField = ({ label, value, onChange, step = "1" }) => (
+  <label className="block">
+    <span className="mb-1 block text-xs text-white/40">{label}</span>
+    <input
+      type="number"
+      step={step}
+      className={fieldClass}
+      value={Number(value || 0)}
+      onChange={(e) => onChange(Number(e.target.value) || 0)}
+    />
+  </label>
+);
+
+const TextPanel = ({ item, onChange, embedded = false }) => {
+  const content = (
+    <>
+      <div className="border-b border-white/5 px-4 py-4">
+      <h3 className="text-sm font-semibold text-white">Text Overlay</h3>
+    </div>
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div>
+        <p className="mb-1 text-xs text-white/40">Headline</p>
+        <textarea
+          className={`${textareaClass} h-20`}
+          value={item.text || ""}
+          onChange={(e) => onChange({ text: e.target.value })}
+        />
+      </div>
+      <div>
+        <p className="mb-1 text-xs text-white/40">Kicker</p>
+        <input
+          className={fieldClass}
+          value={item.kicker || ""}
+          onChange={(e) => onChange({ kicker: e.target.value })}
+        />
+      </div>
+      <div>
+        <p className="mb-1 text-xs text-white/40">Position</p>
+        <select
+          className={fieldClass}
+          value={item.position || "bottom-left"}
+          onChange={(e) => onChange({ position: e.target.value })}
+        >
+          <option value="bottom-left">Bottom left</option>
+          <option value="bottom-center">Bottom center</option>
+          <option value="top-left">Top left</option>
+        </select>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className="mb-1 text-xs text-white/40">Start</p>
+          <input
+            type="number"
+            step="0.25"
+            className={fieldClass}
+            value={Number(item.start || 0).toFixed(2)}
+            onChange={(e) => onChange({ start: Number(e.target.value) || 0 })}
+          />
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-white/40">Duration</p>
+          <input
+            type="number"
+            min="0.5"
+            step="0.25"
+            className={fieldClass}
+            value={Number(item.duration || 1).toFixed(2)}
+            onChange={(e) =>
+              onChange({ duration: Math.max(0.5, Number(e.target.value) || 0.5) })
+            }
+          />
+        </div>
+      </div>
+    </div>
+    </>
+  );
+  return embedded ? (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>
+  ) : (
+    <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-white/5 bg-black/70 backdrop-blur-xl">
+      {content}
+    </aside>
   );
 };
 
@@ -664,6 +1900,28 @@ const ClipPanel = ({ clip, index, onClose }) => (
 // SHARED COMPONENTS
 // ═══════════════════════════════════════════════════
 
+const OptionToggle = ({ label, icon, active, disabled = false, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className={`${optionButtonClass} ${
+      active
+        ? "border-white/25 bg-white/[0.09] text-white"
+        : "border-white/5 bg-white/[0.03] text-white/45 hover:border-white/12 hover:bg-white/[0.05]"
+    } ${disabled ? "cursor-not-allowed opacity-40 hover:border-white/5 hover:bg-white/[0.03]" : ""}`}
+  >
+    <span
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+        active ? "bg-white text-black" : "bg-white/10 text-white/50"
+      }`}
+    >
+      {icon}
+    </span>
+    <span className="min-w-0 text-sm font-medium">{label}</span>
+  </button>
+);
+
 const EmptyState = () => (
   <div className="flex flex-1 items-center justify-center px-6">
     <div className="max-w-md text-center">
@@ -686,6 +1944,7 @@ const ProcessingState = ({ project, completedClips }) => {
     classifying: "Classifying photos...",
     generating: "Generating clips...",
     assembling: "Assembling video...",
+    rendering: "Rendering final video...",
   };
   return (
     <div className="space-y-4 text-center">
@@ -723,12 +1982,14 @@ const ProcessingState = ({ project, completedClips }) => {
 const StatusBadge = ({ status }) => {
   const map = {
     completed: "border-emerald-400/20 bg-emerald-400/10 text-emerald-200",
+    editing: "border-violet-400/20 bg-violet-400/10 text-violet-200",
+    rendering: "border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-200",
     failed: "border-rose-400/20 bg-rose-400/10 text-rose-200",
     classifying: "border-sky-400/20 bg-sky-400/10 text-sky-200",
     generating: "border-amber-400/20 bg-amber-400/10 text-amber-200",
     assembling: "border-sky-400/20 bg-sky-400/10 text-sky-200",
   };
-  const spin = ["generating", "classifying", "assembling"].includes(status);
+  const spin = ["generating", "classifying", "assembling", "rendering"].includes(status);
   return (
     <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs ${map[status] || "border-white/10 bg-white/5 text-white/60"}`}>
       {spin && <span className="mr-1.5 h-3 w-3 animate-spin rounded-full border border-current/20 border-t-current" />}
@@ -740,6 +2001,8 @@ const StatusBadge = ({ status }) => {
 const StatusDot = ({ status, className = "" }) => {
   const colors = {
     completed: "bg-emerald-400",
+    editing: "bg-violet-300",
+    rendering: "bg-fuchsia-300 animate-pulse",
     failed: "bg-rose-400",
     generating: "bg-amber-300 animate-pulse",
     classifying: "bg-sky-300 animate-pulse",

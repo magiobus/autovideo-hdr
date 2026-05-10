@@ -31,7 +31,7 @@ const ProjectPage = () => {
         setLoading(false);
 
         if (
-          ["generating", "classifying", "assembling"].includes(data.status) &&
+          ["generating", "classifying", "assembling", "rendering"].includes(data.status) &&
           !pollingRef.current
         ) {
           pollingRef.current = setInterval(() => pollStatus(), 5000);
@@ -71,7 +71,7 @@ const ProjectPage = () => {
     );
   }
 
-  const isProcessing = ["generating", "classifying", "assembling"].includes(
+  const isProcessing = ["generating", "classifying", "assembling", "rendering"].includes(
     project.status
   );
   const completedClips =
@@ -108,7 +108,14 @@ const ProjectPage = () => {
 
         {/* Video preview area */}
         <div className="flex-1 flex items-center justify-center p-6 min-h-0">
-          {project.finalVideoUrl ? (
+          {project.editorState ? (
+            <iframe
+              title="Video edit preview"
+              src={`/api/projects/${project._id}/preview`}
+              className="aspect-video w-full max-w-5xl rounded-lg border border-base-content/10 bg-black shadow-2xl"
+              allow="autoplay; fullscreen"
+            />
+          ) : project.finalVideoUrl ? (
             <video
               src={project.finalVideoUrl}
               controls
@@ -444,7 +451,8 @@ const ProcessingState = ({ project, completedClips }) => {
   const stepLabel = {
     classifying: "Classifying photos & matching to style...",
     generating: "Generating video clips...",
-    assembling: "Assembling final video...",
+    assembling: "Preparing editor...",
+    rendering: "Rendering final video...",
   };
 
   return (
@@ -507,10 +515,12 @@ const StatusBadge = ({ status }) => {
     classifying: { cls: "badge-info", label: "Classifying" },
     generating: { cls: "badge-warning", label: "Generating" },
     assembling: { cls: "badge-info", label: "Assembling" },
+    editing: { cls: "badge-secondary", label: "Editing" },
+    rendering: { cls: "badge-accent", label: "Rendering" },
     draft: { cls: "badge-ghost", label: "Draft" },
   };
   const c = config[status] || { cls: "badge-ghost", label: status };
-  const spin = ["generating", "classifying", "assembling"].includes(status);
+  const spin = ["generating", "classifying", "assembling", "rendering"].includes(status);
 
   return (
     <span className={`badge ${c.cls}`}>

@@ -23,6 +23,18 @@ const sourceImageSchema = mongoose.Schema(
     key: String,
     classification: String,
     confidence: Number,
+    features: String,
+  },
+  { _id: false }
+);
+
+const transformPassSchema = mongoose.Schema(
+  {
+    order: Number,
+    inputImageUrl: String,
+    outputImageUrl: String,
+    outputR2Key: String,
+    job: jobSchema,
   },
   { _id: false }
 );
@@ -33,6 +45,7 @@ const clipSchema = mongoose.Schema(
     shotIndex: Number,
     sourceImageUrl: String,
     transformedImageUrl: String,
+    transformPasses: [transformPassSchema],
     imageJob: jobSchema,
     videoUrl: String,
     videoJob: jobSchema,
@@ -59,7 +72,9 @@ const projectSchema = mongoose.Schema(
       description: String,
       address: String,
       price: String,
+      narrationNotes: String,
     },
+    generationOptions: mongoose.Schema.Types.Mixed,
     sourceImages: [sourceImageSchema],
     clips: [clipSchema],
     status: {
@@ -69,6 +84,8 @@ const projectSchema = mongoose.Schema(
         "classifying",
         "generating",
         "assembling",
+        "editing",
+        "rendering",
         "completed",
         "failed",
       ],

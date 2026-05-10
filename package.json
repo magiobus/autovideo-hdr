@@ -2,6 +2,9 @@
   "name": "autovideo-hdr",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:trigger": "npx trigger.dev dev",
@@ -21,6 +24,7 @@
     "axios": "^1.16.0",
     "daisyui": "^5.5.19",
     "fluent-ffmpeg": "^2.1.3",
+    "hyperframes": "^0.5.5",
     "mongodb": "^6.21.0",
     "mongoose": "^8.23.1",
     "next": "16.2.6",

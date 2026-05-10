@@ -27,11 +27,11 @@ export const videoPipelineTask = task({
     logger.info("Step 3/4: generate-videos");
     await generateVideos(projectId);
 
-    // Step 4: Assemble final video — FFmpeg + voiceover + audio (2-10 min)
-    logger.info("Step 4/4: assemble");
+    // Step 4: Prepare editable timeline + preview assets
+    logger.info("Step 4/4: prepare editor");
     await assemble(projectId);
 
-    logger.info("Pipeline completed", { projectId });
-    return { projectId, success: true };
+    logger.info("Pipeline ready for editing", { projectId });
+    return { projectId, success: true, status: "editing" };
   },
 });

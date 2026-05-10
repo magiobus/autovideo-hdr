@@ -13,7 +13,8 @@ export async function POST(request) {
 
   await connectDB();
 
-  const { styleId, sourceImages, propertyInfo } = await request.json();
+  const { styleId, sourceImages, propertyInfo, generationOptions } =
+    await request.json();
 
   if (!styleId || !sourceImages?.length) {
     return NextResponse.json(
@@ -31,7 +32,9 @@ export async function POST(request) {
   const project = await Project.create({
     user: session.user.id,
     style: styleId,
+    name: "Video Studio Project",
     propertyInfo,
+    generationOptions,
     sourceImages: sourceImages.map((img) => ({
       url: img.url,
       key: img.key,
