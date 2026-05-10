@@ -6,6 +6,24 @@ import toast from "react-hot-toast";
 import apiClient from "@/libs/api";
 import { uploadFilesToR2 } from "@/helpers/uploadToR2";
 
+const fieldClass =
+  "w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-white/25 focus:bg-white/[0.06]";
+const textareaClass = `${fieldClass} resize-none`;
+const labelClass = "mb-2 text-xs font-medium uppercase tracking-wider text-white/40";
+const pillButtonClass =
+  "rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/30 disabled:text-black/50";
+const ghostButtonClass =
+  "rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/75 transition hover:bg-white/10 hover:text-white";
+
+const Logo = () => (
+  <Link href="/" className="flex items-center gap-2 font-semibold text-white">
+    <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-xs font-bold text-white">
+      AH
+    </span>
+    AutoHDR
+  </Link>
+);
+
 // ═══════════════════════════════════════════════════
 // MAIN PAGE — Single-screen Suno-style workspace
 // ═══════════════════════════════════════════════════
@@ -24,9 +42,12 @@ const ProjectsPage = () => {
   }, []);
 
   useEffect(() => {
-    fetchProjects();
+    const initialFetch = setTimeout(fetchProjects, 0);
     pollingRef.current = setInterval(fetchProjects, 8000);
-    return () => clearInterval(pollingRef.current);
+    return () => {
+      clearTimeout(initialFetch);
+      clearInterval(pollingRef.current);
+    };
   }, [fetchProjects]);
 
   const selectedProject = projects.find((p) => p._id === selectedId) || null;
@@ -37,7 +58,11 @@ const ProjectsPage = () => {
   };
 
   return (
-    <div className="flex h-screen bg-base-300 overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-black text-white selection:bg-white/20">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -top-48 mx-auto h-[520px] max-w-5xl bg-[radial-gradient(ellipse_at_center,rgba(120,80,255,0.16),transparent_60%)]"
+      />
       {/* ═══ LEFT SIDEBAR — Create + List ═══ */}
       <Sidebar
         projects={projects}
@@ -48,7 +73,7 @@ const ProjectsPage = () => {
       />
 
       {/* ═══ MAIN AREA — Selected project or empty state ═══ */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         {selectedProject ? (
           <ProjectDetail
             project={selectedProject}
@@ -83,14 +108,12 @@ const Sidebar = ({
   };
 
   return (
-    <aside className="w-80 bg-base-200 border-r border-base-content/5 flex flex-col overflow-hidden shrink-0">
+    <aside className="relative z-10 flex w-80 shrink-0 flex-col overflow-hidden border-r border-white/5 bg-black/70 backdrop-blur-xl">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-base-content/5 flex items-center justify-between">
-        <Link href="/" className="text-lg font-bold">
-          AutoVideo
-        </Link>
+      <div className="flex items-center justify-between border-b border-white/5 px-4 py-4">
+        <Logo />
         <button
-          className={`btn btn-sm ${showCreate ? "btn-ghost" : "btn-primary"}`}
+          className={showCreate ? ghostButtonClass : pillButtonClass}
           onClick={handleNewClick}
         >
           {showCreate ? "Cancel" : "+ New"}
@@ -109,22 +132,22 @@ const Sidebar = ({
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex justify-center py-8">
-              <span className="loading loading-spinner" />
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
             </div>
           ) : projects.length === 0 ? (
             <div className="text-center py-12 px-4">
-              <p className="text-base-content/40 text-sm">
+              <p className="text-sm text-white/40">
                 No projects yet
               </p>
               <button
-                className="btn btn-primary btn-sm mt-3"
+                className={`${pillButtonClass} mt-3`}
                 onClick={() => setShowCreate(true)}
               >
                 Create your first video
               </button>
             </div>
           ) : (
-            <div className="py-1">
+            <div className="space-y-2 p-3">
               {projects.map((p) => (
                 <ProjectRow
                   key={p._id}
@@ -152,18 +175,18 @@ const ProjectRow = ({ project, isSelected, onClick }) => {
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 transition-colors border-l-2 ${
+      className={`w-full rounded-2xl border p-3 text-left transition ${
         isSelected
-          ? "bg-base-300 border-primary"
-          : "border-transparent hover:bg-base-300/50"
+          ? "border-white/20 bg-white/[0.08]"
+          : "border-white/5 bg-white/[0.03] hover:border-white/12 hover:bg-white/[0.06]"
       }`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium truncate">
+          <p className="truncate text-sm font-medium text-white">
             {project.propertyInfo?.address || project.name}
           </p>
-          <p className="text-xs text-base-content/40 mt-0.5">
+          <p className="mt-0.5 text-xs text-white/45">
             {project.clips?.length || 0} clips
             {project.propertyInfo?.price
               ? ` · ${project.propertyInfo.price}`
@@ -172,18 +195,19 @@ const ProjectRow = ({ project, isSelected, onClick }) => {
         </div>
         <div className="shrink-0 flex items-center gap-1.5">
           {isProcessing && (
-            <span className="loading loading-spinner loading-xs text-warning" />
+            <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-amber-300" />
           )}
           <StatusDot status={project.status} />
         </div>
       </div>
 
       {isProcessing && (
-        <progress
-          className="progress progress-primary w-full h-1 mt-2"
-          value={project.progress}
-          max="100"
-        />
+        <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-white transition-all duration-500"
+            style={{ width: `${project.progress || 0}%` }}
+          />
+        </div>
       )}
     </button>
   );
@@ -270,14 +294,12 @@ const CreateForm = ({ onCreated }) => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex-1 space-y-5 overflow-y-auto p-4">
       {/* Photos */}
       <div>
-        <h3 className="text-xs font-medium uppercase tracking-wider text-base-content/40 mb-2">
-          Photos
-        </h3>
+        <h3 className={labelClass}>Photos</h3>
         <div
-          className="border border-dashed border-base-content/20 rounded-lg p-3 text-center cursor-pointer hover:border-primary/50 transition-colors"
+          className="cursor-pointer rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-4 text-center transition hover:border-white/30 hover:bg-white/[0.05]"
           onClick={() => fileInputRef.current?.click()}
           onDrop={(e) => {
             e.preventDefault();
@@ -285,7 +307,7 @@ const CreateForm = ({ onCreated }) => {
           }}
           onDragOver={(e) => e.preventDefault()}
         >
-          <p className="text-xs text-base-content/40">
+          <p className="text-xs text-white/45">
             {photos.length > 0
               ? `${photos.length} photo${photos.length !== 1 ? "s" : ""} — click to add more`
               : "Drop photos or click to browse"}
@@ -304,17 +326,17 @@ const CreateForm = ({ onCreated }) => {
         </div>
 
         {photos.length > 0 && (
-          <div className="grid grid-cols-4 gap-1 mt-2">
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
             {photos.map((photo) => (
               <div key={photo.id} className="relative group aspect-square">
                 <img
                   src={photo.preview}
                   alt=""
-                  className="w-full h-full object-cover rounded"
+                  className="h-full w-full rounded-lg object-cover"
                 />
                 <button
                   onClick={() => removePhoto(photo.id)}
-                  className="absolute top-0.5 right-0.5 w-4 h-4 bg-error text-error-content rounded-full text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[10px] leading-none text-white opacity-0 ring-1 ring-white/10 transition-opacity group-hover:opacity-100"
                 >
                   ✕
                 </button>
@@ -327,11 +349,9 @@ const CreateForm = ({ onCreated }) => {
       {/* Style selector */}
       {styles.length > 1 && (
         <div>
-          <h3 className="text-xs font-medium uppercase tracking-wider text-base-content/40 mb-2">
-            Style
-          </h3>
+          <h3 className={labelClass}>Style</h3>
           <select
-            className="select select-bordered select-sm w-full"
+            className={fieldClass}
             value={styleId || ""}
             onChange={(e) => setStyleId(e.target.value)}
           >
@@ -349,26 +369,24 @@ const CreateForm = ({ onCreated }) => {
 
       {/* Property info */}
       <div className="space-y-2">
-        <h3 className="text-xs font-medium uppercase tracking-wider text-base-content/40">
-          Property Info
-        </h3>
+        <h3 className={labelClass}>Property Info</h3>
         <input
           type="text"
           placeholder="Address"
-          className="input input-bordered input-sm w-full"
+          className={fieldClass}
           value={propertyInfo.address}
           onChange={handleChange("address")}
         />
         <input
           type="text"
           placeholder="Price"
-          className="input input-bordered input-sm w-full"
+          className={fieldClass}
           value={propertyInfo.price}
           onChange={handleChange("price")}
         />
         <textarea
           placeholder="Description (beds, baths, sqft, features...)"
-          className="textarea textarea-bordered textarea-sm w-full h-16 text-sm"
+          className={`${textareaClass} h-20`}
           value={propertyInfo.description}
           onChange={handleChange("description")}
         />
@@ -376,35 +394,35 @@ const CreateForm = ({ onCreated }) => {
 
       {/* Narration notes */}
       <div>
-        <h3 className="text-xs font-medium uppercase tracking-wider text-base-content/40 mb-1">
+        <h3 className={labelClass}>
           Narration Notes{" "}
-          <span className="font-normal text-base-content/30">(optional)</span>
+          <span className="font-normal text-white/30">(optional)</span>
         </h3>
         <textarea
           placeholder={"Things to mention in voiceover:\n• Great BBQ area\n• Walking distance to downtown\n• Italian marble kitchen"}
-          className="textarea textarea-bordered textarea-sm w-full h-20 text-sm"
+          className={`${textareaClass} h-24`}
           value={propertyInfo.narrationNotes}
           onChange={handleChange("narrationNotes")}
         />
-        <p className="text-[10px] text-base-content/30 mt-0.5">
+        <p className="mt-1 text-[10px] text-white/30">
           Combined with features detected in your photos
         </p>
       </div>
 
       {/* Generate button */}
       <button
-        className={`btn btn-primary w-full ${phase !== "idle" ? "btn-disabled" : ""}`}
+        className={`${pillButtonClass} flex w-full items-center justify-center gap-2`}
         onClick={handleSubmit}
         disabled={!canSubmit}
       >
         {phase === "uploading" ? (
           <>
-            <span className="loading loading-spinner loading-xs" />
+            <span className="h-3 w-3 animate-spin rounded-full border border-black/20 border-t-black" />
             Uploading...
           </>
         ) : phase === "creating" ? (
           <>
-            <span className="loading loading-spinner loading-xs" />
+            <span className="h-3 w-3 animate-spin rounded-full border border-black/20 border-t-black" />
             Creating...
           </>
         ) : (
@@ -430,13 +448,13 @@ const ProjectDetail = ({ project }) => {
   return (
     <>
       {/* Top bar */}
-      <div className="flex items-center justify-between px-6 py-3 bg-base-200 border-b border-base-content/5">
+      <div className="flex items-center justify-between border-b border-white/5 bg-black/50 px-6 py-4 backdrop-blur-xl">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold truncate">
+          <h1 className="truncate text-lg font-semibold text-white">
             {project.propertyInfo?.address || project.name}
           </h1>
           {project.propertyInfo?.price && (
-            <p className="text-xs text-base-content/40">
+            <p className="text-xs text-white/45">
               {project.propertyInfo.price}
             </p>
           )}
@@ -449,7 +467,7 @@ const ProjectDetail = ({ project }) => {
               download
               target="_blank"
               rel="noopener noreferrer"
-              className="btn btn-primary btn-sm gap-1"
+              className={`${pillButtonClass} flex items-center gap-2 py-2`}
             >
               <DownloadIcon />
               Export
@@ -459,15 +477,15 @@ const ProjectDetail = ({ project }) => {
       </div>
 
       {/* Content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Video preview */}
-        <div className="flex-1 flex items-center justify-center p-6">
+        <div className="flex flex-1 items-center justify-center p-6">
           {project.finalVideoUrl ? (
             <video
               src={project.finalVideoUrl}
               controls
               autoPlay
-              className="max-w-full max-h-full rounded-lg shadow-2xl"
+              className="max-h-full max-w-full rounded-2xl border border-white/10 shadow-2xl"
               style={{ aspectRatio: "16/9" }}
             />
           ) : isProcessing ? (
@@ -477,11 +495,11 @@ const ProjectDetail = ({ project }) => {
             />
           ) : project.status === "failed" ? (
             <div className="text-center space-y-2">
-              <div className="text-error text-4xl">!</div>
-              <p className="text-error font-medium">Generation failed</p>
+              <div className="text-4xl text-rose-300">!</div>
+              <p className="font-medium text-rose-200">Generation failed</p>
             </div>
           ) : (
-            <p className="text-base-content/30">No video yet</p>
+            <p className="text-white/30">No video yet</p>
           )}
         </div>
 
@@ -511,8 +529,8 @@ const ProjectDetail = ({ project }) => {
 // CLIP TIMELINE
 // ═══════════════════════════════════════════════════
 const ClipTimeline = ({ clips, selectedClip, onSelect }) => (
-  <div className="bg-base-200 border-t border-base-content/5 px-4 py-3">
-    <div className="flex items-center gap-1 overflow-x-auto pb-1">
+  <div className="border-t border-white/5 bg-black/70 px-4 py-3 backdrop-blur-xl">
+    <div className="flex items-center gap-2 overflow-x-auto pb-1">
       {clips.map((clip, i) => {
         const isDone = clip.videoJob?.status === "completed";
         const isFailed =
@@ -526,31 +544,31 @@ const ClipTimeline = ({ clips, selectedClip, onSelect }) => (
           <button
             key={i}
             onClick={() => onSelect(i)}
-            className={`relative shrink-0 w-28 aspect-video rounded-md overflow-hidden border-2 transition-all hover:opacity-100 ${
+            className={`relative aspect-video w-28 shrink-0 overflow-hidden rounded-xl border transition-all hover:opacity-100 ${
               selectedClip === i
-                ? "border-primary ring-1 ring-primary/30"
+                ? "border-white/70 ring-1 ring-white/30"
                 : isDone
-                  ? "border-success/30 opacity-90"
+                  ? "border-emerald-400/35 opacity-90"
                   : isFailed
-                    ? "border-error/30 opacity-50"
-                    : "border-transparent opacity-60"
+                    ? "border-rose-400/35 opacity-50"
+                    : "border-white/5 opacity-60"
             }`}
           >
             {clip.transformedImageUrl || clip.sourceImageUrl ? (
               <img
                 src={clip.transformedImageUrl || clip.sourceImageUrl}
                 alt=""
-                className="w-full h-full object-cover"
+                className="h-full w-full object-cover"
               />
             ) : (
-              <div className="w-full h-full bg-base-300" />
+              <div className="h-full w-full bg-white/5" />
             )}
             {isWorking && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <span className="loading loading-spinner loading-sm text-white" />
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
               </div>
             )}
-            <span className="absolute bottom-0.5 left-1 text-[10px] text-white font-mono bg-black/60 px-1 rounded">
+            <span className="absolute bottom-1 left-1 rounded-full bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white ring-1 ring-white/10">
               {i + 1}
             </span>
             <StatusDot
@@ -576,10 +594,13 @@ const ClipTimeline = ({ clips, selectedClip, onSelect }) => (
 // CLIP PANEL — Right side detail
 // ═══════════════════════════════════════════════════
 const ClipPanel = ({ clip, index, onClose }) => (
-  <aside className="w-72 bg-base-200 border-l border-base-content/5 flex flex-col overflow-hidden shrink-0">
-    <div className="flex items-center justify-between px-4 py-3 border-b border-base-content/5">
-      <h3 className="font-semibold text-sm">Clip {index + 1}</h3>
-      <button onClick={onClose} className="btn btn-ghost btn-xs btn-square">
+  <aside className="flex w-72 shrink-0 flex-col overflow-hidden border-l border-white/5 bg-black/70 backdrop-blur-xl">
+    <div className="flex items-center justify-between border-b border-white/5 px-4 py-4">
+      <h3 className="text-sm font-semibold text-white">Clip {index + 1}</h3>
+      <button
+        onClick={onClose}
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
+      >
         ✕
       </button>
     </div>
@@ -587,50 +608,50 @@ const ClipPanel = ({ clip, index, onClose }) => (
       {/* Source */}
       {clip.sourceImageUrl && (
         <div>
-          <p className="text-xs text-base-content/40 mb-1">Original</p>
+          <p className="mb-1 text-xs text-white/40">Original</p>
           <img
             src={clip.sourceImageUrl}
             alt=""
-            className="w-full aspect-video object-cover rounded-md"
+            className="aspect-video w-full rounded-xl border border-white/5 object-cover"
           />
         </div>
       )}
       {/* Transformed */}
       {clip.transformedImageUrl && (
         <div>
-          <p className="text-xs text-base-content/40 mb-1">Transformed</p>
+          <p className="mb-1 text-xs text-white/40">Transformed</p>
           <img
             src={clip.transformedImageUrl}
             alt=""
-            className="w-full aspect-video object-cover rounded-md"
+            className="aspect-video w-full rounded-xl border border-white/5 object-cover"
           />
         </div>
       )}
       {/* Video */}
       {clip.videoUrl && (
         <div>
-          <p className="text-xs text-base-content/40 mb-1">Video</p>
+          <p className="mb-1 text-xs text-white/40">Video</p>
           <video
             src={clip.videoUrl}
             controls
             muted
             loop
-            className="w-full rounded-md"
+            className="w-full rounded-xl border border-white/5"
           />
         </div>
       )}
       {/* Status */}
-      <div className="space-y-1 text-xs pt-2 border-t border-base-content/5">
+      <div className="space-y-1 border-t border-white/5 pt-3 text-xs">
         <div className="flex justify-between">
-          <span className="text-base-content/40">Transform</span>
+          <span className="text-white/40">Transform</span>
           <StatusLabel status={clip.imageJob?.status} />
         </div>
         <div className="flex justify-between">
-          <span className="text-base-content/40">Video</span>
+          <span className="text-white/40">Video</span>
           <StatusLabel status={clip.videoJob?.status} />
         </div>
         {(clip.imageJob?.error || clip.videoJob?.error) && (
-          <p className="text-error text-xs mt-1">
+          <p className="mt-1 text-xs text-rose-300">
             {clip.imageJob?.error || clip.videoJob?.error}
           </p>
         )}
@@ -644,10 +665,17 @@ const ClipPanel = ({ clip, index, onClose }) => (
 // ═══════════════════════════════════════════════════
 
 const EmptyState = () => (
-  <div className="flex-1 flex items-center justify-center">
-    <div className="text-center">
-      <p className="text-base-content/30 text-lg">
+  <div className="flex flex-1 items-center justify-center px-6">
+    <div className="max-w-md text-center">
+      <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/60">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        Video Studio
+      </span>
+      <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white">
         Select a project or create a new one
+      </h1>
+      <p className="mt-3 text-sm text-white/45">
+        Upload photos, choose a creator style, and let the Trigger pipeline build the edit.
       </p>
     </div>
   </div>
@@ -660,31 +688,31 @@ const ProcessingState = ({ project, completedClips }) => {
     assembling: "Assembling video...",
   };
   return (
-    <div className="text-center space-y-4">
+    <div className="space-y-4 text-center">
       <div className="relative w-24 h-24 mx-auto">
         <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
           <circle
             cx="50" cy="50" r="42" fill="none"
             stroke="currentColor" strokeWidth="6"
-            className="text-base-content/10"
+            className="text-white/10"
           />
           <circle
             cx="50" cy="50" r="42" fill="none"
             stroke="currentColor" strokeWidth="6"
             strokeDasharray={`${(project.progress / 100) * 264} 264`}
             strokeLinecap="round"
-            className="text-primary transition-all duration-500"
+            className="text-white transition-all duration-500"
           />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-lg font-mono font-bold">
+        <span className="absolute inset-0 flex items-center justify-center font-mono text-lg font-bold text-white">
           {project.progress}%
         </span>
       </div>
-      <p className="text-base-content/60">
+      <p className="text-white/60">
         {labels[project.status] || "Processing..."}
       </p>
       {project.clips?.length > 0 && (
-        <p className="text-sm text-base-content/30">
+        <p className="text-sm text-white/30">
           {completedClips.length}/{project.clips.length} clips done
         </p>
       )}
@@ -694,16 +722,16 @@ const ProcessingState = ({ project, completedClips }) => {
 
 const StatusBadge = ({ status }) => {
   const map = {
-    completed: "badge-success",
-    failed: "badge-error",
-    classifying: "badge-info",
-    generating: "badge-warning",
-    assembling: "badge-info",
+    completed: "border-emerald-400/20 bg-emerald-400/10 text-emerald-200",
+    failed: "border-rose-400/20 bg-rose-400/10 text-rose-200",
+    classifying: "border-sky-400/20 bg-sky-400/10 text-sky-200",
+    generating: "border-amber-400/20 bg-amber-400/10 text-amber-200",
+    assembling: "border-sky-400/20 bg-sky-400/10 text-sky-200",
   };
   const spin = ["generating", "classifying", "assembling"].includes(status);
   return (
-    <span className={`badge ${map[status] || "badge-ghost"}`}>
-      {spin && <span className="loading loading-spinner loading-xs mr-1" />}
+    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs ${map[status] || "border-white/10 bg-white/5 text-white/60"}`}>
+      {spin && <span className="mr-1.5 h-3 w-3 animate-spin rounded-full border border-current/20 border-t-current" />}
       {status}
     </span>
   );
@@ -711,27 +739,27 @@ const StatusBadge = ({ status }) => {
 
 const StatusDot = ({ status, className = "" }) => {
   const colors = {
-    completed: "bg-success",
-    failed: "bg-error",
-    generating: "bg-warning animate-pulse",
-    classifying: "bg-info animate-pulse",
-    assembling: "bg-info animate-pulse",
+    completed: "bg-emerald-400",
+    failed: "bg-rose-400",
+    generating: "bg-amber-300 animate-pulse",
+    classifying: "bg-sky-300 animate-pulse",
+    assembling: "bg-sky-300 animate-pulse",
   };
   return (
     <span
-      className={`w-2 h-2 rounded-full ${colors[status] || "bg-base-content/20"} ${className}`}
+      className={`h-2 w-2 rounded-full ${colors[status] || "bg-white/20"} ${className}`}
     />
   );
 };
 
 const StatusLabel = ({ status }) => {
   const colors = {
-    completed: "text-success",
-    failed: "text-error",
-    processing: "text-warning",
+    completed: "text-emerald-300",
+    failed: "text-rose-300",
+    processing: "text-amber-300",
   };
   return (
-    <span className={colors[status] || "text-base-content/30"}>
+    <span className={colors[status] || "text-white/30"}>
       {status || "pending"}
     </span>
   );

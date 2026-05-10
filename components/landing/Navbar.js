@@ -7,7 +7,7 @@ const navLinks = [
   { label: "Contact", href: "#contact" },
   { label: "Pricing", href: "#pricing" },
   { label: "Models", href: "#models" },
-  { label: "Video Studio", href: "/generate" },
+  { label: "Video Studio", href: "/projects" },
   { label: "Listings", href: "#listings" },
 ];
 

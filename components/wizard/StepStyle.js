@@ -22,16 +22,16 @@ const StepStyle = ({ formData, setFormData }) => {
   if (loading) {
     return (
       <div className="flex justify-center py-12">
-        <span className="loading loading-spinner loading-lg" />
+        <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-white" />
       </div>
     );
   }
 
   if (styles.length === 0) {
     return (
-      <div className="text-center py-12 text-base-content/50">
+      <div className="py-12 text-center text-white/50">
         <p>No styles available. Run the seed script first.</p>
-        <code className="text-xs mt-2 block">
+        <code className="mt-2 block text-xs text-white/35">
           node --experimental-modules scripts/seed-styles.js
         </code>
       </div>
@@ -40,7 +40,7 @@ const StepStyle = ({ formData, setFormData }) => {
 
   return (
     <div className="space-y-4">
-      <p className="text-base-content/70 text-center">
+      <p className="text-center text-white/60">
         Choose a video style
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -48,42 +48,42 @@ const StepStyle = ({ formData, setFormData }) => {
           <div
             key={style._id}
             onClick={() => selectStyle(style._id)}
-            className={`card bg-base-200 cursor-pointer transition-all hover:scale-[1.02] ${
+            className={`cursor-pointer rounded-2xl border bg-white/[0.03] transition hover:border-white/20 hover:bg-white/[0.06] ${
               formData.styleId === style._id
-                ? "border-2 border-primary ring-2 ring-primary/20"
-                : "border-2 border-transparent"
+                ? "border-white/40 ring-1 ring-white/20"
+                : "border-white/5"
             }`}
           >
-            <div className="card-body py-6">
+            <div className="p-4">
               {/* Aspect ratio badge */}
               <div className="flex items-center justify-between">
-                <h3 className="card-title text-base">{style.name}</h3>
-                <span className="badge badge-outline badge-sm">
+                <h3 className="text-base font-medium text-white">{style.name}</h3>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/60">
                   {style.aspectRatio}
                 </span>
               </div>
 
               {style.description && (
-                <p className="text-sm text-base-content/50 line-clamp-2">
+                <p className="mt-2 line-clamp-2 text-sm text-white/45">
                   {style.description}
                 </p>
               )}
 
-              <div className="flex items-center gap-2 mt-2">
-                <span className="badge badge-primary badge-sm">
+              <div className="mt-3 flex items-center gap-2">
+                <span className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-black">
                   {style.shotCount} shots
                 </span>
                 <div className="flex flex-wrap gap-1">
                   {style.roomTypes?.slice(0, 3).map((rt, idx) => (
                     <span
                       key={idx}
-                      className="badge badge-ghost badge-xs"
+                      className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/50"
                     >
                       {rt.replace(/_/g, " ")}
                     </span>
                   ))}
                   {style.roomTypes?.length > 3 && (
-                    <span className="badge badge-ghost badge-xs">
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-white/50">
                       +{style.roomTypes.length - 3}
                     </span>
                   )}

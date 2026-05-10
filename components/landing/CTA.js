@@ -13,7 +13,7 @@ const CTA = ({ authed }) => {
         </p>
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link
-            href={authed ? "/generate" : "/api/auth/signin"}
+            href={authed ? "/projects" : "/api/auth/signin"}
             className="rounded-full bg-white text-black font-medium px-6 py-3 text-sm hover:bg-white/90 transition"
           >
             {authed ? "Open Video Studio" : "Start free"}

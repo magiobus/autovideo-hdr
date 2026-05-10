@@ -13,43 +13,44 @@ const ProjectPage = () => {
   const pollingRef = useRef(null);
 
   useEffect(() => {
-    fetchProject();
+    const pollStatus = async () => {
+      try {
+        const data = await apiClient.get(`/projects/${id}`);
+        setProject(data);
+        if (["completed", "failed"].includes(data.status) && pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+      } catch {}
+    };
+
+    const fetchProject = async () => {
+      try {
+        const data = await apiClient.get(`/projects/${id}`);
+        setProject(data);
+        setLoading(false);
+
+        if (
+          ["generating", "classifying", "assembling"].includes(data.status) &&
+          !pollingRef.current
+        ) {
+          pollingRef.current = setInterval(() => pollStatus(), 5000);
+        }
+        if (["completed", "failed"].includes(data.status) && pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+      } catch {
+        setLoading(false);
+      }
+    };
+
+    const initialFetch = setTimeout(fetchProject, 0);
     return () => {
+      clearTimeout(initialFetch);
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [id]);
-
-  const fetchProject = async () => {
-    try {
-      const data = await apiClient.get(`/projects/${id}`);
-      setProject(data);
-      setLoading(false);
-
-      if (
-        ["generating", "classifying", "assembling"].includes(data.status) &&
-        !pollingRef.current
-      ) {
-        pollingRef.current = setInterval(() => pollStatus(), 5000);
-      }
-      if (["completed", "failed"].includes(data.status) && pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
-    } catch {
-      setLoading(false);
-    }
-  };
-
-  const pollStatus = async () => {
-    try {
-      const data = await apiClient.get(`/projects/${id}`);
-      setProject(data);
-      if (["completed", "failed"].includes(data.status) && pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
-    } catch {}
-  };
 
   if (loading) {
     return (
@@ -237,7 +238,7 @@ const LeftSidebar = ({ project }) => {
 
       {/* Bottom: new project button */}
       <div className="p-4 border-t border-base-content/5">
-        <Link href="/generate" className="btn btn-sm btn-ghost w-full">
+        <Link href="/projects" className="btn btn-sm btn-ghost w-full">
           + New Project
         </Link>
       </div>
@@ -493,7 +494,7 @@ const FailedState = () => (
   <div className="text-center space-y-3">
     <div className="text-error text-5xl">!</div>
     <p className="text-error font-medium">Generation failed</p>
-    <Link href="/generate" className="btn btn-sm btn-primary">
+    <Link href="/projects" className="btn btn-sm btn-primary">
       Try Again
     </Link>
   </div>
